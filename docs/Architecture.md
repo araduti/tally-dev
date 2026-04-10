@@ -1,7 +1,7 @@
 # Tally Architecture
 
-**Version:** 2.1 (April 2026)  
-**Status:** Locked & Production-Ready
+**Version:** 0.1 (April 2026)  
+**Status:** Draft
 
 ## 1. Core Principles
 
