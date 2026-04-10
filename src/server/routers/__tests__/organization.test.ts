@@ -1,11 +1,13 @@
 /**
  * Unit tests for the organization router.
  *
- * The organization router exposes four procedures:
+ * The organization router exposes six procedures:
  *   - get           (orgMemberProcedure — any org member)
  *   - update        (orgOwnerMutationProcedure — ORG_OWNER only, idempotency-guarded)
  *   - listClients   (mspTechProcedure — MSP_TECHNICIAN+)
  *   - createClient  (mspAdminMutationProcedure — MSP_ADMIN+, idempotency-guarded)
+ *   - switchOrg     (authenticatedMutationProcedure — any authenticated user, idempotency-guarded)
+ *   - acceptDpa     (orgOwnerMutationProcedure — ORG_OWNER only, idempotency-guarded)
  */
 
 // ──────────────────────────────────────────────
@@ -421,6 +423,387 @@ describe('organizationRouter', () => {
           idempotencyKey: VALID_UUID,
         }),
       ).rejects.toThrow('An organization with this slug already exists');
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  switchOrg
+  // ─────────────────────────────────────
+  describe('switchOrg', () => {
+    const TARGET_ORG_ID = VALID_CUID; // different from ORG_ID
+
+    function makeTargetOrg(overrides: Record<string, unknown> = {}) {
+      return {
+        id: TARGET_ORG_ID,
+        name: 'Target Organization',
+        slug: 'target-org',
+        organizationType: 'DIRECT',
+        deletedAt: null,
+        parentOrganizationId: null,
+        ...overrides,
+      };
+    }
+
+    it('switches to a valid org as a direct member', async () => {
+      const targetOrg = makeTargetOrg();
+
+      // mockAuth sets session + member for auth middleware.
+      // prisma.member.findUnique returns a member for ALL calls
+      // (auth middleware and switchOrg direct member check).
+      mockAuth('ORG_OWNER');
+      prisma.organization.findUnique.mockResolvedValue(targetOrg);
+      prisma.session.update.mockResolvedValue({});
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.switchOrg({
+        organizationId: TARGET_ORG_ID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual({
+        organization: {
+          id: TARGET_ORG_ID,
+          name: 'Target Organization',
+          slug: 'target-org',
+          organizationType: 'DIRECT',
+        },
+      });
+
+      expect(prisma.organization.findUnique).toHaveBeenCalledWith({
+        where: { id: TARGET_ORG_ID },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          organizationType: true,
+          deletedAt: true,
+          parentOrganizationId: true,
+        },
+      });
+
+      expect(prisma.session.update).toHaveBeenCalledWith({
+        where: { token: SESSION_TOKEN },
+        data: { activeOrganizationId: TARGET_ORG_ID },
+      });
+    });
+
+    it('allows platform admin (SUPER_ADMIN) to switch without direct membership', async () => {
+      const targetOrg = makeTargetOrg();
+
+      // Platform admin session — user.platformRole drives isPlatformAdmin check
+      prisma.session.findUnique.mockResolvedValue({
+        id: 'session-1',
+        token: SESSION_TOKEN,
+        userId: USER_ID,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        activeOrganizationId: ORG_ID,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        user: { id: USER_ID, platformRole: 'SUPER_ADMIN' },
+      });
+
+      // No direct membership; middleware won't throw because platformRole is set
+      prisma.member.findUnique.mockResolvedValue(null);
+      prisma.organization.findUnique.mockResolvedValue(targetOrg);
+      prisma.session.update.mockResolvedValue({});
+
+      const caller = organizationRouter.createCaller(
+        createTestContext({
+          headers: createAuthHeaders(),
+          effectiveRole: { platformRole: 'SUPER_ADMIN', mspRole: null, orgRole: null },
+        }),
+      );
+
+      const result = await caller.switchOrg({
+        organizationId: TARGET_ORG_ID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.organization.id).toBe(TARGET_ORG_ID);
+
+      // Only the auth middleware checks membership; switchOrg skips it for platform admins
+      expect(prisma.member.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows switching via MSP delegation when user is member of parent org', async () => {
+      const MSP_ORG_ID = 'clhmsp_parent_org_000000000';
+      const targetOrg = makeTargetOrg({
+        organizationType: 'CLIENT',
+        parentOrganizationId: MSP_ORG_ID,
+      });
+
+      prisma.session.findUnique.mockResolvedValue({
+        id: 'session-1',
+        token: SESSION_TOKEN,
+        userId: USER_ID,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        activeOrganizationId: ORG_ID,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        user: { id: USER_ID, platformRole: null },
+      });
+
+      // Ordering matters: auth middleware → switchOrg direct check → switchOrg MSP check
+      prisma.member.findUnique
+        .mockResolvedValueOnce({
+          id: 'member-1',
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          orgRole: 'ORG_OWNER',
+          mspRole: 'MSP_ADMIN',
+        })
+        .mockResolvedValueOnce(null) // no direct membership in target
+        .mockResolvedValueOnce({
+          id: 'msp-member-1',
+          organizationId: MSP_ORG_ID,
+          userId: USER_ID,
+          orgRole: 'ORG_OWNER',
+          mspRole: 'MSP_TECHNICIAN',
+        });
+
+      prisma.organization.findUnique.mockResolvedValue(targetOrg);
+      prisma.session.update.mockResolvedValue({});
+
+      const caller = organizationRouter.createCaller(
+        createTestContext({
+          headers: createAuthHeaders(),
+          effectiveRole: { platformRole: null, mspRole: 'MSP_ADMIN', orgRole: 'ORG_OWNER' },
+        }),
+      );
+
+      const result = await caller.switchOrg({
+        organizationId: TARGET_ORG_ID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.organization.id).toBe(TARGET_ORG_ID);
+      expect(result.organization.organizationType).toBe('CLIENT');
+
+      // MSP delegation: 1 (middleware) + 1 (direct, null) + 1 (parent MSP member)
+      expect(prisma.member.findUnique).toHaveBeenCalledTimes(3);
+    });
+
+    it('throws NOT_FOUND when target org does not exist', async () => {
+      mockAuth('ORG_OWNER');
+      prisma.organization.findUnique.mockResolvedValue(null);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+
+      await expect(
+        caller.switchOrg({
+          organizationId: TARGET_ORG_ID,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow('Organization not found');
+    });
+
+    it('throws NOT_FOUND when target org is soft-deleted', async () => {
+      const deletedOrg = makeTargetOrg({ deletedAt: new Date('2024-12-01') });
+
+      mockAuth('ORG_OWNER');
+      prisma.organization.findUnique.mockResolvedValue(deletedOrg);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+
+      await expect(
+        caller.switchOrg({
+          organizationId: TARGET_ORG_ID,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow('Organization not found');
+    });
+
+    it('throws FORBIDDEN when user has no access to target org', async () => {
+      // Target has no parent → no MSP delegation possible
+      const targetOrg = makeTargetOrg();
+
+      prisma.session.findUnique.mockResolvedValue({
+        id: 'session-1',
+        token: SESSION_TOKEN,
+        userId: USER_ID,
+        expiresAt: new Date(Date.now() + 3_600_000),
+        activeOrganizationId: ORG_ID,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        user: { id: USER_ID, platformRole: null },
+      });
+
+      // Auth middleware succeeds; switchOrg direct member check fails
+      prisma.member.findUnique
+        .mockResolvedValueOnce({
+          id: 'member-1',
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          orgRole: 'ORG_OWNER',
+          mspRole: null,
+        })
+        .mockResolvedValueOnce(null);
+
+      prisma.organization.findUnique.mockResolvedValue(targetOrg);
+
+      const caller = organizationRouter.createCaller(
+        createTestContext({
+          headers: createAuthHeaders(),
+          effectiveRole: { platformRole: null, mspRole: null, orgRole: 'ORG_OWNER' },
+        }),
+      );
+
+      await expect(
+        caller.switchOrg({
+          organizationId: TARGET_ORG_ID,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow('You do not have access to this organization');
+    });
+
+    it('writes audit log with organization.switched action', async () => {
+      const targetOrg = makeTargetOrg();
+
+      mockAuth('ORG_OWNER');
+      prisma.organization.findUnique.mockResolvedValue(targetOrg);
+      prisma.session.update.mockResolvedValue({});
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      await caller.switchOrg({
+        organizationId: TARGET_ORG_ID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'organization.switched',
+          organizationId: TARGET_ORG_ID,
+          userId: USER_ID,
+          entityId: TARGET_ORG_ID,
+          before: expect.objectContaining({ activeOrganizationId: ORG_ID }),
+          after: expect.objectContaining({ activeOrganizationId: TARGET_ORG_ID }),
+        }),
+      );
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  acceptDpa
+  // ─────────────────────────────────────
+  describe('acceptDpa', () => {
+    const DPA_VERSION = '2024-01';
+
+    const mockDpaAcceptance = {
+      id: VALID_CUID,
+      version: DPA_VERSION,
+      acceptedAt: new Date('2024-06-15'),
+      acceptedByUserId: USER_ID,
+    };
+
+    it('creates a new DPA acceptance and writes audit log', async () => {
+      rlsDb.dpaAcceptance.findUnique.mockResolvedValue(null);
+      rlsDb.dpaAcceptance.create.mockResolvedValue(mockDpaAcceptance);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.acceptDpa({
+        version: DPA_VERSION,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual({
+        dpaAcceptance: {
+          id: VALID_CUID,
+          version: DPA_VERSION,
+          acceptedAt: mockDpaAcceptance.acceptedAt,
+          userId: USER_ID,
+        },
+      });
+
+      expect(rlsDb.dpaAcceptance.create).toHaveBeenCalledWith({
+        data: {
+          organizationId: ORG_ID,
+          acceptedByUserId: USER_ID,
+          version: DPA_VERSION,
+        },
+        select: {
+          id: true,
+          version: true,
+          acceptedAt: true,
+          acceptedByUserId: true,
+        },
+      });
+
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'organization.dpa_accepted',
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          entityId: VALID_CUID,
+          after: expect.objectContaining({
+            version: DPA_VERSION,
+            acceptedAt: mockDpaAcceptance.acceptedAt,
+          }),
+        }),
+      );
+    });
+
+    it('returns existing DPA acceptance when already accepted (idempotent)', async () => {
+      rlsDb.dpaAcceptance.findUnique.mockResolvedValue(mockDpaAcceptance);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.acceptDpa({
+        version: DPA_VERSION,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual({
+        dpaAcceptance: {
+          id: VALID_CUID,
+          version: DPA_VERSION,
+          acceptedAt: mockDpaAcceptance.acceptedAt,
+          userId: USER_ID,
+        },
+      });
+
+      expect(rlsDb.dpaAcceptance.findUnique).toHaveBeenCalledWith({
+        where: {
+          organizationId_version: {
+            organizationId: ORG_ID,
+            version: DPA_VERSION,
+          },
+        },
+        select: {
+          id: true,
+          version: true,
+          acceptedAt: true,
+          acceptedByUserId: true,
+        },
+      });
+
+      // No create or audit log when returning cached acceptance
+      expect(rlsDb.dpaAcceptance.create).not.toHaveBeenCalled();
+      expect(mockWriteAuditLog).not.toHaveBeenCalled();
+    });
+
+    it('returns correct shape with id, version, acceptedAt, and userId', async () => {
+      const specificAcceptance = {
+        id: 'clhspecific_dpa_id_00000000',
+        version: '2025-03',
+        acceptedAt: new Date('2025-03-01T12:00:00Z'),
+        acceptedByUserId: USER_ID,
+      };
+
+      rlsDb.dpaAcceptance.findUnique.mockResolvedValue(null);
+      rlsDb.dpaAcceptance.create.mockResolvedValue(specificAcceptance);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.acceptDpa({
+        version: '2025-03',
+        idempotencyKey: VALID_UUID,
+      });
+
+      // Verify all properties exist with correct types
+      expect(result.dpaAcceptance).toEqual({
+        id: expect.any(String),
+        version: '2025-03',
+        acceptedAt: expect.any(Date),
+        userId: expect.any(String),
+      });
     });
   });
 });
