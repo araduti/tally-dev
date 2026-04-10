@@ -238,7 +238,7 @@ export const organizationRouter = router({
         throw createBusinessError({
           code: 'NOT_FOUND',
           message: 'Organization not found',
-          errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+          errorCode: 'ORGANIZATION:SWITCH:ORG_NOT_FOUND',
         });
       }
 
@@ -289,7 +289,7 @@ export const organizationRouter = router({
         throw createBusinessError({
           code: 'UNAUTHORIZED',
           message: 'Session not found',
-          errorCode: 'AUTH:SESSION:NO_ORG',
+          errorCode: 'AUTH:SESSION:TOKEN_NOT_FOUND',
         });
       }
 
