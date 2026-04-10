@@ -327,6 +327,9 @@ DOMAIN:CATEGORY:CODE
 | Error Code | tRPC Code | Description | Recovery |
 |---|---|---|---|
 | `ADMIN:MEMBER:ALREADY_EXISTS` | `CONFLICT` | User already has a Member record in this organization | `NONE` |
+| `ADMIN:INVITATION:ALREADY_PENDING` | `CONFLICT` | An active invitation already exists for this email in this org | `NONE` |
+| `ADMIN:INVITATION:EXPIRED` | `PRECONDITION_FAILED` | Invitation has expired and cannot be accepted | `RESEND_INVITATION` |
+| `ADMIN:INVITATION:INVALID_STATUS` | `BAD_REQUEST` | Invitation is not in `PENDING` status — cannot be accepted/rejected | `NONE` |
 
 ### Recovery Hints
 
@@ -345,6 +348,7 @@ Every business error may include an optional `recovery` object in `cause`. Recov
 | `FORCE_SYNC` | Data is stale, sync needed before proceeding | Trigger sync and retry the original action |
 | `ACCEPT_DPA` | DPA acceptance required | Show DPA acceptance flow |
 | `SIGN_CONTRACT` | Contract signing required to activate org | Redirect to contract signing flow |
+| `RESEND_INVITATION` | Invitation expired, a new one is needed | Offer to resend the invitation |
 | `CONTACT_SUPPORT` | No automated recovery — support ticket needed | Show support contact / ticket creation |
 | `NONE` | No automated recovery available | Display the error message only |
 

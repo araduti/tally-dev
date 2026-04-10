@@ -2,6 +2,8 @@
 // Tally — Prisma Schema
 // Updated: April 10, 2026
 // Reviewed against ARCHITECTURE.md v2.3
+// Schema improvements applied: FK indexes, enum tightening,
+// explicit cascades, composite indexes, compliance fixes.
 // =============================================================
 
 generator client {
@@ -57,6 +59,14 @@ enum TransactionStatus {
   REFUNDED
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  REVOKED
+}
+
 // --- RBAC Enums (Three-Tier Role Model) ---
 
 enum OrganizationType {
@@ -104,6 +114,7 @@ model User {
   members       Member[]
   auditLogs     AuditLog[]
   dpaAcceptances DpaAcceptance[]
+  sentInvitations Invitation[]
 
   @@map("user")
 }
@@ -125,6 +136,8 @@ model Session {
   activeOrganizationId String?
   activeOrganization   Organization? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([activeOrganizationId])
   @@map("session")
 }
 
@@ -144,6 +157,7 @@ model Account {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
+  @@index([userId])
   @@map("account")
 }
 
@@ -163,12 +177,17 @@ model Verification {
 // =============================================================
 
 model Organization {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   name        String
-  slug        String   @unique
+  slug        String    @unique
   logo        String?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   metadata    Json?
+
+  // Soft-delete: set when org is deactivated. Null = active.
+  // Application code should filter on deletedAt IS NULL for normal queries.
+  deletedAt   DateTime?
 
   // --- Organization Hierarchy ---
   // Determines RBAC model: MSP members get MspRole, CLIENT/DIRECT get OrgRole
@@ -213,21 +232,34 @@ model Member {
   mspRole  MspRole?
 
   createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@unique([organizationId, userId])
+  @@index([userId])
   @@map("member")
 }
 
 model Invitation {
-  id             String       @id @default(cuid())
+  id             String           @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   email          String
-  role           String?
-  status         String       @default("PENDING")
-  expiresAt      DateTime
-  inviterId      String
 
+  // Role to assign upon acceptance. Use the role enum matching the org type:
+  //   MSP org       → set mspRole, leave orgRole null
+  //   CLIENT/DIRECT → set orgRole, leave mspRole null
+  orgRole  OrgRole?
+  mspRole  MspRole?
+
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+
+  inviterId      String?
+  inviter        User?            @relation(fields: [inviterId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([email])
   @@map("invitation")
 }
 
@@ -250,6 +282,10 @@ model DpaAcceptance {
   version    String
   acceptedAt DateTime @default(now())
 
+  // An org can only accept a given DPA version once.
+  @@unique([organizationId, version])
+  @@index([organizationId])
+  @@index([acceptedByUserId])
   @@map("dpa_acceptances")
 }
 
@@ -333,6 +369,7 @@ model BundleProduct {
   product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@id([bundleId, productId])
+  @@index([productId])
   @@map("bundle_products")
 }
 
@@ -344,7 +381,7 @@ model ProductOffering {
   bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
 
   vendorConnectionId String?
-  vendorConnection   VendorConnection? @relation(fields: [vendorConnectionId], references: [id])
+  vendorConnection   VendorConnection? @relation(fields: [vendorConnectionId], references: [id], onDelete: SetNull)
 
   sourceType   VendorType
   externalSku  String
@@ -359,7 +396,9 @@ model ProductOffering {
   minQuantity  Int?
   maxQuantity  Int?
 
-  metadata Json @default("{}")
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
+  metadata Json @default(dbgenerated("'{}'::jsonb"))
 
   lastPricingFetchedAt DateTime?
 
@@ -371,6 +410,8 @@ model ProductOffering {
   purchaseTransactions PurchaseTransaction[]
 
   @@unique([bundleId, sourceType, externalSku])
+  @@index([vendorConnectionId])
+  @@index([bundleId, sourceType])
   @@map("product_offerings")
 }
 
@@ -383,11 +424,11 @@ model Subscription {
   organizationId String
   organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   vendorConnectionId String
-  vendorConnection   VendorConnection @relation(fields: [vendorConnectionId], references: [id])
+  vendorConnection   VendorConnection @relation(fields: [vendorConnectionId], references: [id], onDelete: Restrict)
 
   // The commercial Bundle this subscription fulfils
   bundleId String
-  bundle   Bundle @relation(fields: [bundleId], references: [id])
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Restrict)
 
   externalId        String             @unique  // Distributor's subscription ID
   status            SubscriptionStatus @default(PENDING)
@@ -400,6 +441,7 @@ model Subscription {
   billingSnapshots BillingSnapshot[]
 
   @@index([organizationId])
+  @@index([organizationId, status])
   @@map("subscriptions")
 }
 
@@ -409,7 +451,7 @@ model License {
   subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
 
   productOfferingId String?
-  productOffering   ProductOffering? @relation(fields: [productOfferingId], references: [id])
+  productOffering   ProductOffering? @relation(fields: [productOfferingId], references: [id], onDelete: SetNull)
 
   quantity        Int
   // Staged quantity for a commitment-gated scale-down.
@@ -424,6 +466,7 @@ model License {
   updatedAt DateTime @updatedAt
 
   @@index([subscriptionId])
+  @@index([productOfferingId])
   @@map("licenses")
 }
 
@@ -437,7 +480,7 @@ model PurchaseTransaction {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
   productOfferingId String
-  productOffering   ProductOffering @relation(fields: [productOfferingId], references: [id])
+  productOffering   ProductOffering @relation(fields: [productOfferingId], references: [id], onDelete: Restrict)
 
   quantity        Int
   grossAmount     Decimal
@@ -470,7 +513,7 @@ model BillingSnapshot {
 
   // Optional: link snapshot to a specific subscription for per-sub reconciliation
   subscriptionId String?
-  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
   projectedAmount Decimal
   periodStart     DateTime
@@ -478,11 +521,15 @@ model BillingSnapshot {
 
   // Breakdown by distributor, committed changes, etc.
   // Documented schema: { distributors: [...], committedChanges: [...] }
-  metadata Json @default("{}")
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
+  metadata Json @default(dbgenerated("'{}'::jsonb"))
 
   createdAt DateTime @default(now())
 
   @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([organizationId, periodStart])
   @@map("billing_snapshots")
 }
 
@@ -494,10 +541,12 @@ model BillingSnapshot {
 model AuditLog {
   id             String       @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Restrict: audit logs must survive org deletion to preserve compliance trail.
+  // Archive or reassign audit logs before deleting an organization.
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   userId    String?
-  user      User?   @relation(fields: [userId], references: [id])
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   action    String   // e.g., "license.scale_down.staged", "license.scale_down.executed"
   entityId  String?  // ID of the affected record
@@ -509,5 +558,6 @@ model AuditLog {
 
   @@index([organizationId])
   @@index([entityId])
+  @@index([organizationId, action, createdAt(sort: Desc)])
   @@map("audit_logs")
 }
