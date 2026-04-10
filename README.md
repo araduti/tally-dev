@@ -101,3 +101,4 @@ cp .env.example .env
 docker compose up -d db redis garage
 npx prisma db push
 npm run dev
+```

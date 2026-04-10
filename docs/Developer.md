@@ -11,13 +11,14 @@
 3. [Local Development Setup](#3-local-development-setup)
 4. [Environment Variables](#4-environment-variables)
 5. [Coding Standards](#5-coding-standards)
-6. [Common Workflows](#6-common-workflows)
-7. [Adding a Vendor Adapter](#7-adding-a-vendor-adapter)
-8. [Testing](#8-testing)
-9. [Contributing & Branch Conventions](#9-contributing--branch-conventions)
-10. [Troubleshooting](#10-troubleshooting)
+6. [Database Migrations](#6-database-migrations)
+7. [Common Workflows](#7-common-workflows)
+8. [Adding a Vendor Adapter](#8-adding-a-vendor-adapter)
+9. [Testing](#9-testing)
+10. [Contributing & Branch Conventions](#10-contributing--branch-conventions)
+11. [Troubleshooting](#11-troubleshooting)
 
-> For system design and architectural decisions, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+> For system design and architectural decisions, see [Architecture.md](./Architecture.md).
 
 ---
 
@@ -252,15 +253,58 @@ await db.organization.create({
 
 ---
 
-## 6. Common Workflows
+## 6. Database Migrations
 
-### 6.1 Adding a New Bundle (e.g., M365 Business Premium)
+### Local Development
+
+For local development, use `prisma db push` to sync schema changes directly:
+
+```bash
+npx prisma db push
+```
+
+This is fast and convenient but **does not create migration files**. It is suitable only for local iteration.
+
+### Staging & Production
+
+For staging and production environments, always use **Prisma Migrate** to create versioned, reviewable migration files:
+
+```bash
+# Generate a new migration from schema changes
+npx prisma migrate dev --name describe_your_change
+
+# Apply pending migrations in staging/production
+npx prisma migrate deploy
+```
+
+### Migration Rules
+
+- Never use `prisma db push` in staging or production — it can cause data loss.
+- Every schema change must produce a migration file committed to version control.
+- Migration files live in `prisma/migrations/` and must never be edited after they have been applied to any environment.
+- Destructive changes (dropping columns, renaming tables) require a two-step migration: first add the new structure, deploy, then remove the old one in a subsequent release.
+
+### Docker Compose Database
+
+The local Docker Compose stack provides PostgreSQL, Redis, and Garage. The database service is named `db`:
+
+```bash
+docker compose up -d db redis garage  # start infrastructure
+docker compose down                   # stop all services
+docker compose down -v                # stop and remove volumes (resets data)
+```
+
+---
+
+## 7. Common Workflows
+
+### 7.1 Adding a New Bundle (e.g., M365 Business Premium)
 
 1. **Define Products** — create `Product` records for each atomic service in the bundle (e.g., Exchange Online, Teams).
 2. **Create Bundle** — create a `Bundle` record, linking the `globalSkuId` to those products.
 3. **Attach ProductOfferings** — create one `ProductOffering` per distributor that carries this SKU, with distributor-specific pricing.
 
-### 6.2 Discovery / Savings Analysis Flow
+### 7.2 Discovery / Savings Analysis Flow
 
 This is how Tally identifies optimisation opportunities from a customer's existing licenses:
 
@@ -271,7 +315,7 @@ This is how Tally identifies optimisation opportunities from a customer's existi
 4. Surface  — Savings opportunities are presented to the user
 ```
 
-### 6.3 Commitment-Gated Scale-Down
+### 7.3 Commitment-Gated Scale-Down
 
 When a user requests a quantity reduction blocked by a commitment window:
 
@@ -280,11 +324,11 @@ When a user requests a quantity reduction blocked by a commitment window:
 3. On wake, the workflow calls the vendor API and promotes `pendingQuantity` → `quantity`.
 4. An `AuditLog` entry is written.
 
-> See `ARCHITECTURE.md §7` for the full workflow diagram.
+> See `Architecture.md §8` for the full workflow diagram.
 
 ---
 
-## 7. Adding a Vendor Adapter
+## 8. Adding a Vendor Adapter
 
 Vendor adapters live in `src/adapters/`. Each adapter translates Tally's internal model to a specific distributor's API.
 
@@ -315,7 +359,7 @@ export const myVendorAdapter: VendorAdapter = {
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 ### Test Types
 
@@ -334,7 +378,7 @@ export const myVendorAdapter: VendorAdapter = {
 
 ---
 
-## 9. Contributing & Branch Conventions
+## 10. Contributing & Branch Conventions
 
 ### Branch Naming
 
@@ -370,7 +414,7 @@ docs: document commitment-gated scale-down flow
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### Database connection refused
 

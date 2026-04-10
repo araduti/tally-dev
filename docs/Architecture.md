@@ -356,7 +356,7 @@ Each request carries a `traceId` (generated at `proxy.ts`) that is threaded thro
 | `staging` | Full cloud stack; mirrors production config |
 | `production` | Live tenant traffic; change-controlled deploys |
 
-> See `DEVELOPER.md` for local setup instructions and environment variable reference.
+> See [Developer.md](../docs/Developer.md) for local setup instructions and environment variable reference.
 
 ---
 
