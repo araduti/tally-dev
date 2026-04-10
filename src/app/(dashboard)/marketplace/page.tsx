@@ -1,4 +1,66 @@
-export default function MarketplacePage() {
+import { Suspense } from 'react';
+import { api } from '@/trpc/server';
+import { MarketplaceClient } from './marketplace-client';
+
+function MarketplaceLoadingSkeleton() {
+  return (
+    <>
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+        <div className="h-10 w-full bg-slate-700 rounded-lg animate-pulse" />
+      </div>
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="bg-slate-800 rounded-xl p-5 border border-slate-700">
+            <div className="h-5 w-40 bg-slate-700/50 rounded animate-pulse mb-3" />
+            <div className="h-3 w-24 bg-slate-700/50 rounded animate-pulse mb-3" />
+            <div className="space-y-1.5 mb-3">
+              <div className="h-3 w-32 bg-slate-700/50 rounded animate-pulse" />
+              <div className="h-3 w-28 bg-slate-700/50 rounded animate-pulse" />
+            </div>
+            <div className="h-9 w-full bg-slate-700 rounded-lg animate-pulse" />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+async function MarketplaceContent() {
+  try {
+    const result = await api.catalog.listBundles({});
+
+    // Serialize Date → ISO string
+    const serializedItems = result.items.map((item: any) => ({
+      id: item.id,
+      name: item.name,
+      category: item.category ?? null,
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+      products: (item.products ?? []).map((bp: any) => ({
+        product: {
+          id: bp.product.id,
+          name: bp.product.name,
+        },
+      })),
+    }));
+
+    return (
+      <MarketplaceClient
+        initialBundles={serializedItems}
+        initialNextCursor={result.nextCursor}
+      />
+    );
+  } catch {
+    return (
+      <div className="bg-slate-800 rounded-xl border border-red-700/50 p-6">
+        <p className="text-red-400 text-sm">
+          Unable to load marketplace catalog. Please try refreshing the page.
+        </p>
+      </div>
+    );
+  }
+}
+
+export default async function MarketplacePage() {
   return (
     <div>
       <div className="mb-8">
@@ -8,30 +70,9 @@ export default function MarketplacePage() {
         </p>
       </div>
 
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <div className="flex items-center gap-4">
-          <input
-            type="search"
-            placeholder="Search bundles (e.g., Microsoft 365 E3)..."
-            className="flex-1 px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            aria-label="Search bundles"
-          />
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Search
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="p-6 text-center">
-          <p className="text-slate-400">
-            Search for a bundle to see cross-distributor pricing comparison.
-          </p>
-          <p className="text-sm text-slate-500 mt-2">
-            Prices are fetched in real-time from all connected distributors.
-          </p>
-        </div>
-      </div>
+      <Suspense fallback={<MarketplaceLoadingSkeleton />}>
+        <MarketplaceContent />
+      </Suspense>
     </div>
   );
 }

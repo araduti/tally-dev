@@ -1,4 +1,95 @@
-export default function SettingsPage() {
+import { Suspense } from 'react';
+import { api } from '@/trpc/server';
+import { SettingsClient } from './settings-client';
+
+function SettingsLoadingSkeleton() {
+  return (
+    <>
+      {/* Organization skeleton */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+        <div className="h-5 w-24 bg-slate-700 rounded animate-pulse mb-4" />
+        <div className="h-10 w-full max-w-md bg-slate-700/50 rounded-lg animate-pulse mb-4" />
+        <div className="h-9 w-20 bg-slate-700 rounded-lg animate-pulse" />
+      </div>
+      {/* Vendor Connections skeleton */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-5 w-36 bg-slate-700 rounded animate-pulse" />
+          <div className="h-9 w-28 bg-slate-700 rounded-lg animate-pulse" />
+        </div>
+        <div className="h-4 w-64 bg-slate-700/50 rounded animate-pulse" />
+      </div>
+      {/* Team Members skeleton */}
+      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-5 w-28 bg-slate-700 rounded animate-pulse" />
+          <div className="h-9 w-28 bg-slate-700 rounded-lg animate-pulse" />
+        </div>
+        <div className="h-4 w-48 bg-slate-700/50 rounded animate-pulse" />
+      </div>
+    </>
+  );
+}
+
+async function SettingsContent() {
+  const [orgResult, connectionsResult, membersResult] = await Promise.allSettled([
+    api.organization.get({}),
+    api.vendor.listConnections({}),
+    api.admin.listMembers({}),
+  ]);
+
+  // Serialize organization
+  let serializedOrg = null;
+  if (orgResult.status === 'fulfilled') {
+    const org: any = orgResult.value;
+    serializedOrg = {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      logo: org.logo ?? null,
+    };
+  }
+
+  // Serialize vendor connections
+  let serializedConnections: any[] = [];
+  if (connectionsResult.status === 'fulfilled') {
+    serializedConnections = connectionsResult.value.items.map((item: any) => ({
+      id: item.id,
+      vendorType: item.vendorType,
+      status: item.status,
+      lastSyncAt: item.lastSyncAt instanceof Date
+        ? item.lastSyncAt.toISOString()
+        : (item.lastSyncAt ?? null),
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    }));
+  }
+
+  // Serialize team members
+  let serializedMembers: any[] = [];
+  if (membersResult.status === 'fulfilled') {
+    serializedMembers = membersResult.value.items.map((item: any) => ({
+      id: item.id,
+      user: {
+        id: item.user.id,
+        name: item.user.name ?? null,
+        email: item.user.email,
+      },
+      orgRole: item.orgRole ?? null,
+      mspRole: item.mspRole ?? null,
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    }));
+  }
+
+  return (
+    <SettingsClient
+      initialOrganization={serializedOrg}
+      initialConnections={serializedConnections}
+      initialMembers={serializedMembers}
+    />
+  );
+}
+
+export default async function SettingsPage() {
   return (
     <div>
       <div className="mb-8">
@@ -6,49 +97,9 @@ export default function SettingsPage() {
         <p className="mt-1 text-slate-400">Organization settings, vendor connections, and team management</p>
       </div>
 
-      {/* Organization Info */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Organization</h2>
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Organization Name</label>
-            <input
-              type="text"
-              className="w-full max-w-md px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Your Organization"
-            />
-          </div>
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Save Changes
-          </button>
-        </div>
-      </div>
-
-      {/* Vendor Connections */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Vendor Connections</h2>
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Add Connection
-          </button>
-        </div>
-        <p className="text-slate-400 text-sm">
-          No vendor connections configured. Connect a distributor to enable catalog sync and purchasing.
-        </p>
-      </div>
-
-      {/* Team Members */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Team Members</h2>
-          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Invite Member
-          </button>
-        </div>
-        <p className="text-slate-400 text-sm">
-          Manage your team and their roles within the organization.
-        </p>
-      </div>
+      <Suspense fallback={<SettingsLoadingSkeleton />}>
+        <SettingsContent />
+      </Suspense>
     </div>
   );
 }

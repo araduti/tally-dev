@@ -2,10 +2,11 @@ import type { VendorType } from '@prisma/client';
 import type { VendorAdapter, VendorCredentials } from './types';
 import { decrypt } from '@/lib/encryption';
 import { VendorError } from './types';
+import { pax8Adapter } from './pax8';
 
 // Adapter registry — add new adapters here
 const adapters: Partial<Record<VendorType, VendorAdapter>> = {
-  // PAX8: pax8Adapter,
+  PAX8: pax8Adapter,
   // INGRAM: ingramAdapter,
   // TDSYNNEX: tdSynnexAdapter,
 };

@@ -1,4 +1,86 @@
-export default function CompliancePage() {
+import { Suspense } from 'react';
+import { api } from '@/trpc/server';
+import { ComplianceClient } from './compliance-client';
+
+function ComplianceLoadingSkeleton() {
+  return (
+    <>
+      <div className="grid md:grid-cols-2 gap-6 mb-8">
+        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <div className="h-5 w-24 bg-slate-700 rounded animate-pulse mb-4" />
+          <div className="h-4 w-32 bg-slate-700/50 rounded animate-pulse" />
+        </div>
+        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+          <div className="h-5 w-28 bg-slate-700 rounded animate-pulse mb-4" />
+          <div className="h-4 w-32 bg-slate-700/50 rounded animate-pulse" />
+        </div>
+      </div>
+      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-700">
+          <div className="h-5 w-20 bg-slate-700 rounded animate-pulse" />
+        </div>
+        <div className="p-6 space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-10 bg-slate-700/50 rounded animate-pulse" />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+async function ComplianceContent() {
+  // Use Promise.allSettled so one failure doesn't block the others
+  const [auditLogsResult, dpaResult] = await Promise.allSettled([
+    api.admin.listAuditLogs({}),
+    // DPA status: try to find latest acceptance via audit logs (inline approach)
+    // There's no dedicated DPA query, so we detect via the admin router context
+    (async () => {
+      try {
+        // The DPA check is done inside subscription/vendor routers,
+        // but there's no standalone DPA query. We can infer DPA status from
+        // audit logs or attempt a proxy check. For now, provide a sensible default.
+        return { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
+      } catch {
+        return { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
+      }
+    })(),
+  ]);
+
+  // Parse audit logs
+  let serializedAuditLogs: any[] = [];
+  let auditLogNextCursor: string | null = null;
+
+  if (auditLogsResult.status === 'fulfilled') {
+    serializedAuditLogs = auditLogsResult.value.items.map((item: any) => ({
+      id: item.id,
+      action: item.action,
+      entityId: item.entityId ?? null,
+      userId: item.userId ?? null,
+      user: item.user
+        ? { name: item.user.name ?? null, email: item.user.email }
+        : null,
+      traceId: item.traceId ?? null,
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    }));
+    auditLogNextCursor = auditLogsResult.value.nextCursor;
+  }
+
+  // Parse DPA status
+  const dpaStatus = dpaResult.status === 'fulfilled'
+    ? dpaResult.value
+    : { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
+
+  return (
+    <ComplianceClient
+      dpaStatus={dpaStatus}
+      initialAuditLogs={serializedAuditLogs}
+      initialNextCursor={auditLogNextCursor}
+    />
+  );
+}
+
+export default async function CompliancePage() {
   return (
     <div>
       <div className="mb-8">
@@ -6,37 +88,9 @@ export default function CompliancePage() {
         <p className="mt-1 text-slate-400">DPA status, contract signing, and audit trail</p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6 mb-8">
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <h2 className="text-lg font-semibold text-white mb-4">DPA Status</h2>
-          <div className="flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-yellow-400" aria-hidden="true"></span>
-            <span className="text-slate-300">Not yet accepted</span>
-          </div>
-          <button className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Accept DPA
-          </button>
-        </div>
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <h2 className="text-lg font-semibold text-white mb-4">Contract Status</h2>
-          <div className="flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-yellow-400" aria-hidden="true"></span>
-            <span className="text-slate-300">Unsigned</span>
-          </div>
-          <button className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition">
-            Sign Contract
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-700">
-          <h2 className="text-lg font-semibold text-white">Audit Log</h2>
-        </div>
-        <div className="p-6 text-center text-slate-400">
-          No audit entries yet. Actions will be logged here automatically.
-        </div>
-      </div>
+      <Suspense fallback={<ComplianceLoadingSkeleton />}>
+        <ComplianceContent />
+      </Suspense>
     </div>
   );
 }
