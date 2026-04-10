@@ -1,12 +1,14 @@
 /**
  * Unit tests for the admin router.
  *
- * The admin router exposes five procedures:
- *   - listMembers    (orgOwnerProcedure)
- *   - inviteMember   (orgOwnerMutationProcedure — idempotent)
- *   - updateRole     (orgOwnerMutationProcedure — idempotent)
- *   - removeMember   (orgOwnerMutationProcedure — idempotent)
- *   - listAuditLogs  (orgOwnerProcedure)
+ * The admin router exposes seven procedures:
+ *   - listMembers       (orgOwnerProcedure)
+ *   - inviteMember      (orgOwnerMutationProcedure — idempotent)
+ *   - updateRole        (orgOwnerMutationProcedure — idempotent)
+ *   - removeMember      (orgOwnerMutationProcedure — idempotent)
+ *   - listInvitations   (orgOwnerProcedure)
+ *   - revokeInvitation  (orgOwnerMutationProcedure — idempotent)
+ *   - listAuditLogs     (orgOwnerProcedure)
  *
  * NOTE: The idempotency guard middleware (`idempotencyGuard`) is a cross-
  * cutting concern tested separately. It accesses `input` which is not
@@ -609,6 +611,170 @@ describe('adminRouter', () => {
           orderBy: { createdAt: 'desc' },
         }),
       );
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  listInvitations
+  // ─────────────────────────────────────
+  describe('listInvitations', () => {
+    it('returns invitations with correct fields', async () => {
+      const caller = createAuthedCaller();
+      const invitation = makeMockInvitation();
+      rlsDb.invitation.findMany.mockResolvedValue([invitation]);
+
+      const result = await caller.listInvitations({});
+
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toEqual({
+        id: invitation.id,
+        email: invitation.email,
+        orgRole: invitation.orgRole,
+        mspRole: invitation.mspRole,
+        status: invitation.status,
+        expiresAt: invitation.expiresAt,
+        createdAt: invitation.createdAt,
+      });
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('returns empty list when no invitations exist', async () => {
+      const caller = createAuthedCaller();
+      rlsDb.invitation.findMany.mockResolvedValue([]);
+
+      const result = await caller.listInvitations({});
+
+      expect(result.items).toHaveLength(0);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('filters by status when provided', async () => {
+      const caller = createAuthedCaller();
+      rlsDb.invitation.findMany.mockResolvedValue([]);
+
+      await caller.listInvitations({
+        where: { status: 'PENDING' },
+      });
+
+      expect(rlsDb.invitation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'PENDING' },
+        }),
+      );
+    });
+
+    it('paginates correctly when more results exist', async () => {
+      const caller = createAuthedCaller();
+      const limit = 2;
+      const invitations = [
+        makeMockInvitation({ id: VALID_CUID }),
+        makeMockInvitation({ id: VALID_CUID_2 }),
+        makeMockInvitation({ id: VALID_CUID_3 }),
+      ];
+      rlsDb.invitation.findMany.mockResolvedValue(invitations);
+
+      const result = await caller.listInvitations({ limit });
+
+      expect(result.items).toHaveLength(2);
+      expect(result.nextCursor).toBe(VALID_CUID_2);
+    });
+
+    it('uses default limit of 25', async () => {
+      const caller = createAuthedCaller();
+      rlsDb.invitation.findMany.mockResolvedValue([]);
+
+      await caller.listInvitations({});
+
+      expect(rlsDb.invitation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 26, // 25 + 1
+        }),
+      );
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  revokeInvitation
+  // ─────────────────────────────────────
+  describe('revokeInvitation', () => {
+    it('revokes a PENDING invitation and writes audit log', async () => {
+      const caller = createAuthedCaller();
+      const invitation = makeMockInvitation({ id: VALID_CUID, status: 'PENDING' });
+      const revokedInvitation = { ...invitation, status: 'REVOKED' };
+
+      rlsDb.invitation.findFirst.mockResolvedValue(invitation);
+      rlsDb.invitation.update.mockResolvedValue(revokedInvitation);
+
+      const result = await caller.revokeInvitation({
+        invitationId: VALID_CUID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.invitation).toEqual({
+        id: VALID_CUID,
+        status: 'REVOKED',
+      });
+      expect(rlsDb.invitation.update).toHaveBeenCalledWith({
+        where: { id: VALID_CUID },
+        data: { status: 'REVOKED' },
+      });
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'admin.invitation_revoked',
+          entityId: VALID_CUID,
+          before: { status: 'PENDING' },
+          after: { status: 'REVOKED' },
+        }),
+      );
+    });
+
+    it('throws NOT_FOUND when invitation does not exist', async () => {
+      const caller = createAuthedCaller();
+      rlsDb.invitation.findFirst.mockResolvedValue(null);
+
+      await expect(
+        caller.revokeInvitation({
+          invitationId: VALID_CUID,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow(TRPCError);
+    });
+
+    it('throws BAD_REQUEST when invitation is not PENDING', async () => {
+      const caller = createAuthedCaller();
+      const acceptedInvitation = makeMockInvitation({
+        id: VALID_CUID,
+        status: 'ACCEPTED',
+      });
+      rlsDb.invitation.findFirst.mockResolvedValue(acceptedInvitation);
+
+      await expect(
+        caller.revokeInvitation({
+          invitationId: VALID_CUID,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow(TRPCError);
+    });
+
+    it('returns revoked invitation with correct shape', async () => {
+      const caller = createAuthedCaller();
+      const invitation = makeMockInvitation({ id: VALID_CUID_2, status: 'PENDING' });
+      const revokedInvitation = { ...invitation, status: 'REVOKED' };
+
+      rlsDb.invitation.findFirst.mockResolvedValue(invitation);
+      rlsDb.invitation.update.mockResolvedValue(revokedInvitation);
+
+      const result = await caller.revokeInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual({
+        invitation: {
+          id: VALID_CUID_2,
+          status: 'REVOKED',
+        },
+      });
     });
   });
 });
