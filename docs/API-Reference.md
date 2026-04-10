@@ -855,8 +855,11 @@ z.object({
   invitation: {
     id: string,
     email: string,
-    status: 'PENDING',
+    orgRole: OrgRole | null,
+    mspRole: MspRole | null,
+    status: InvitationStatus,           // 'PENDING' on creation
     expiresAt: Date,
+    createdAt: Date,
   },
 }
 ```
@@ -1020,6 +1023,9 @@ z.object({}) // no input — uses active org from session
   isContractSigned: boolean,
   billingType: BillingType,
   metadata: unknown | null,
+  createdAt: Date,
+  updatedAt: Date,
+  deletedAt: Date | null,             // null = active; set = soft-deleted
 }
 ```
 
@@ -1089,6 +1095,7 @@ z.object({
     provisioningEnabled: boolean,
     isContractSigned: boolean,
     billingType: BillingType,
+    deletedAt: Date | null,
   }>,
   nextCursor: string | null,
 }
@@ -1130,6 +1137,9 @@ z.object({
     organizationType: 'CLIENT',
     parentOrganizationId: string,   // the MSP org's ID
     billingType: BillingType,
+    createdAt: Date,
+    updatedAt: Date,
+    deletedAt: null,                // always null on creation
   },
 }
 ```

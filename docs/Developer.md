@@ -251,6 +251,62 @@ await db.organization.create({
 
 > MSP staff do not need a `Member` row on the new client org. Access is automatically delegated via `parentOrganizationId` at the RLS layer.
 
+**Creating an Invitation with typed roles:**
+
+```typescript
+import { InvitationStatus, OrgRole, MspRole } from '@prisma/client';
+
+// Invite to a CLIENT/DIRECT org — set orgRole, leave mspRole null
+await db.invitation.create({
+  data: {
+    organizationId: clientOrgId,
+    email: 'user@example.com',
+    orgRole: OrgRole.ORG_ADMIN,
+    mspRole: null,
+    status: InvitationStatus.PENDING,  // default, but explicit is clearer
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    inviterId: ctx.userId,
+  },
+});
+
+// Invite to an MSP org — set mspRole, leave orgRole null
+await db.invitation.create({
+  data: {
+    organizationId: mspOrgId,
+    email: 'tech@example.com',
+    mspRole: MspRole.MSP_TECHNICIAN,
+    orgRole: null,
+    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    inviterId: ctx.userId,
+  },
+});
+```
+
+### 5.7 Soft-Delete & Organization Lifecycle
+
+Organizations use soft-delete via `deletedAt`. When deactivating an org, set `deletedAt` instead of deleting the record:
+
+```typescript
+// ✅ Correct — soft-delete preserves audit logs, billing snapshots, etc.
+await db.organization.update({
+  where: { id: orgId },
+  data: { deletedAt: new Date() },
+});
+
+// ❌ Wrong — hard delete is blocked by AuditLog onDelete: Restrict,
+//    and would destroy billing and compliance data
+await db.organization.delete({ where: { id: orgId } });
+```
+
+When querying organizations, always filter out soft-deleted records unless explicitly accessing archived data:
+
+```typescript
+// ✅ Normal queries — exclude soft-deleted orgs
+const activeOrgs = await db.organization.findMany({
+  where: { deletedAt: null },
+});
+```
+
 ---
 
 ## 6. Database Migrations
@@ -400,6 +456,8 @@ Before opening a PR, confirm:
 - [ ] No secrets or credentials in logs or API responses
 - [ ] New `Bundle` / `ProductOffering` records are covered by a migration or seed
 - [ ] `AuditLog` entries are written for any new mutations
+- [ ] Organization queries filter on `deletedAt IS NULL` unless explicitly accessing soft-deleted orgs
+- [ ] Invitation flows use `InvitationStatus` enum — never raw strings for status
 
 ### Commit Messages
 

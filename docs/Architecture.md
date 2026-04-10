@@ -219,21 +219,23 @@ Product          — The atomic service (e.g., Exchange Online, Teams, SharePoin
 
 | Entity | Purpose |
 |---|---|
-| `Organization` | The tenant hub. Holds billing metadata, contract status, DPA state, org type (`MSP` / `CLIENT` / `DIRECT`), and optional `parentOrganizationId`. |
+| `Organization` | The tenant hub. Holds billing metadata, contract status, DPA state, org type (`MSP` / `CLIENT` / `DIRECT`), and optional `parentOrganizationId`. Supports soft-delete via `deletedAt`. |
 | `Member` | Scopes a `User` to an `Organization` with either an `OrgRole` (for CLIENT/DIRECT orgs) or an `MspRole` (for MSP orgs). |
+| `Invitation` | Tracks pending invitations to join an org. Uses `InvitationStatus` enum (`PENDING` / `ACCEPTED` / `REJECTED` / `EXPIRED` / `REVOKED`) and typed role fields (`orgRole` / `mspRole`). Linked to the inviting user via `inviterId`. |
 | `VendorConnection` | Encrypted credentials for a third-party distributor, scoped to an org. |
 | `Bundle` | A commercial SKU (e.g., M365 E3) composed of one or more `Product` records. |
 | `ProductOffering` | A distributor-specific price point for a `Bundle`. |
 | `Subscription` | The active commercial agreement for a `Bundle` within an org. |
 | `License` | The live entitlement linked to a `Subscription`. Tracks `quantity` and `pendingQuantity`. |
-| `DpaAcceptance` | Records which user accepted the DPA and at what version, per org. |
-| `AuditLog` | Immutable append-only record of every mutation. Never updated or deleted. |
+| `DpaAcceptance` | Records which user accepted the DPA and at what version, per org. Unique per `[organizationId, version]`. |
+| `AuditLog` | Immutable append-only record of every mutation. Never updated or deleted. Uses `onDelete: Restrict` — audit logs survive org deletion. |
 
 ### Key Relationships
 
 ```
 Organization (MSP)
   ├── Member (1:N, mspRole set)        ← MSP_OWNER / MSP_ADMIN / MSP_TECHNICIAN
+  ├── Invitation (1:N)                 ← pending invitations (InvitationStatus enum)
   ├── clientOrganizations (1:N)        ← child CLIENT orgs this MSP manages
   │     ├── Member (1:N, orgRole set)  ← ORG_OWNER / ORG_ADMIN / ORG_MEMBER
   │     ├── VendorConnection (1:N)
@@ -241,14 +243,18 @@ Organization (MSP)
   │     │     ├── Bundle (N:1)         ← what SKU this subscription covers
   │     │     └── License (1:1)
   │     │           └── ProductOffering (N:1)  ← distributor + price
-  │     └── AuditLog (1:N)
-  └── AuditLog (1:N)
+  │     ├── DpaAcceptance (1:N)        ← unique per [organizationId, version]
+  │     └── AuditLog (1:N)            ← onDelete: Restrict (immutable)
+  ├── DpaAcceptance (1:N)
+  └── AuditLog (1:N)                  ← onDelete: Restrict (immutable)
 
 Organization (DIRECT)
   ├── Member (1:N, orgRole set)
+  ├── Invitation (1:N)
   ├── VendorConnection (1:N)
   ├── Subscription (1:N)
-  └── AuditLog (1:N)
+  ├── DpaAcceptance (1:N)
+  └── AuditLog (1:N)                  ← onDelete: Restrict (immutable)
 
 Bundle
   ├── Product (N:M via BundleProduct)
@@ -257,7 +263,8 @@ Bundle
 
 User
   ├── platformRole (PlatformRole?)  ← Tally staff only; null for regular users
-  └── Member (1:N)                  ← one record per org the user belongs to
+  ├── Member (1:N)                  ← one record per org the user belongs to
+  └── sentInvitations (1:N)         ← invitations this user has sent
 ```
 
 > A `Subscription` references a `Bundle` to record *what* was purchased, and a `License` references a `ProductOffering` to record *from which distributor* and *at what price*.
@@ -308,8 +315,9 @@ User requests scale-down
 | Encryption at rest | AES-256-GCM for all `VendorConnection` credential fields. |
 | File isolation | Garage (S3) objects prefixed with `org/{organizationId}/`. Cross-org access is impossible by design. |
 | Cache isolation | Redis keys prefixed with `cache:{organizationId}:`. |
-| DPA gate | Data Processing Agreement acceptance is checked before any vendor provisioning flow begins. |
-| Audit trail | Every mutation produces an immutable `AuditLog` row before the response is returned. |
+| DPA gate | Data Processing Agreement acceptance is checked before any vendor provisioning flow begins. Unique per `[organizationId, version]` — cannot be duplicated. |
+| Audit trail | Every mutation produces an immutable `AuditLog` row before the response is returned. Uses `onDelete: Restrict` — audit logs cannot be cascade-deleted when an organization is removed. Archive or reassign audit logs before deleting an org. |
+| Organization soft-delete | Organizations are deactivated via `deletedAt` (soft-delete) rather than hard-deleted. This preserves referential integrity across subscriptions, audit logs, and billing snapshots. Application code filters on `deletedAt IS NULL` for normal queries. |
 | Secret hygiene | No secret may carry the `NEXT_PUBLIC_` prefix. Secrets are never logged. |
 
 ---
@@ -383,4 +391,6 @@ Each request carries a `traceId` (generated at `proxy.ts`) that is threaded thro
 | **`MspRole`** | A role held by a user within an MSP org (`MSP_OWNER`, `MSP_ADMIN`, `MSP_TECHNICIAN`). Grants delegated access to all child client orgs. |
 | **`OrgRole`** | A role held by a user within a CLIENT or DIRECT org (`ORG_OWNER`, `ORG_ADMIN`, `ORG_MEMBER`). |
 | **`PlatformRole`** | A Tally staff role (`SUPER_ADMIN`, `SUPPORT`) set directly on `User`. Null for all regular users. |
+| **`InvitationStatus`** | Enum tracking invitation lifecycle: `PENDING`, `ACCEPTED`, `REJECTED`, `EXPIRED`, `REVOKED`. |
+| **Soft-delete** | Deactivation pattern using a nullable `deletedAt` timestamp instead of hard deletion. Active records have `deletedAt IS NULL`. Used on `Organization` to preserve referential integrity. |
 | **Delegated access** | MSP user access to a client org resolved via `parentOrganizationId` traversal, without requiring a `Member` row on the client org. |
