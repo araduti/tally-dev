@@ -185,7 +185,8 @@ const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
 });
 
 // Composed procedure types — QUERIES (read-only, no idempotency)
-export const protectedProcedure = t.procedure.use(isAuthenticated).use(requireOrg);
+export const authenticatedProcedure = t.procedure.use(isAuthenticated);
+export const protectedProcedure = authenticatedProcedure.use(requireOrg);
 export const orgMemberProcedure = protectedProcedure;
 export const orgAdminProcedure = protectedProcedure.use(requireRole('ORG_ADMIN', 'ORG_OWNER', 'MSP_ADMIN', 'MSP_OWNER'));
 export const orgOwnerProcedure = protectedProcedure.use(requireRole('ORG_OWNER', 'MSP_OWNER'));
@@ -195,6 +196,7 @@ export const mspOwnerProcedure = protectedProcedure.use(requireRole('MSP_OWNER')
 
 // Composed procedure types — MUTATIONS (idempotency-guarded)
 // Every mutation must use one of these, never a query-only procedure.
+export const authenticatedMutationProcedure = authenticatedProcedure.use(idempotencyGuard);
 export const orgAdminMutationProcedure = orgAdminProcedure.use(idempotencyGuard);
 export const orgOwnerMutationProcedure = orgOwnerProcedure.use(idempotencyGuard);
 export const mspTechMutationProcedure = mspTechProcedure.use(idempotencyGuard);
