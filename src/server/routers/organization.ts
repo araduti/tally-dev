@@ -320,6 +320,98 @@ export const organizationRouter = router({
       };
     }),
 
+  getDpaStatus: orgMemberProcedure
+    .input(z.object({}))
+    .query(async ({ ctx }) => {
+      const latestDpa = await ctx.db.dpaAcceptance.findFirst({
+        where: {
+          organizationId: ctx.organizationId!,
+        },
+        orderBy: { acceptedAt: 'desc' },
+        select: {
+          version: true,
+          acceptedAt: true,
+          acceptedBy: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      if (!latestDpa) {
+        return {
+          accepted: false,
+          version: null,
+          acceptedAt: null,
+          acceptedBy: null,
+        };
+      }
+
+      return {
+        accepted: true,
+        version: latestDpa.version,
+        acceptedAt: latestDpa.acceptedAt,
+        acceptedBy: latestDpa.acceptedBy,
+      };
+    }),
+
+  deactivate: orgOwnerMutationProcedure
+    .input(z.object({
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input: _input }) => {
+      const org = await ctx.db.organization.findUnique({
+        where: { id: ctx.organizationId! },
+        select: {
+          id: true,
+          deletedAt: true,
+        },
+      });
+
+      if (!org) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ORGANIZATION:LIFECYCLE:NOT_FOUND',
+        });
+      }
+
+      if (org.deletedAt !== null) {
+        throw createBusinessError({
+          code: 'CONFLICT',
+          message: 'Organization is already deactivated',
+          errorCode: 'ORGANIZATION:LIFECYCLE:ALREADY_DEACTIVATED',
+        });
+      }
+
+      const now = new Date();
+
+      const updated = await ctx.db.organization.update({
+        where: { id: ctx.organizationId! },
+        data: { deletedAt: now },
+        select: {
+          id: true,
+          deletedAt: true,
+        },
+      });
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'organization.deactivated',
+        entityId: org.id,
+        before: { deletedAt: null },
+        after: { deletedAt: now },
+        traceId: ctx.traceId,
+      });
+
+      return { organization: { id: updated.id, deletedAt: updated.deletedAt! } };
+    }),
+
   acceptDpa: orgOwnerMutationProcedure
     .input(z.object({
       version: z.string().min(1),

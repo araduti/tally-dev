@@ -1,13 +1,15 @@
 /**
  * Unit tests for the organization router.
  *
- * The organization router exposes six procedures:
+ * The organization router exposes eight procedures:
  *   - get           (orgMemberProcedure — any org member)
  *   - update        (orgOwnerMutationProcedure — ORG_OWNER only, idempotency-guarded)
  *   - listClients   (mspTechProcedure — MSP_TECHNICIAN+)
  *   - createClient  (mspAdminMutationProcedure — MSP_ADMIN+, idempotency-guarded)
  *   - switchOrg     (authenticatedMutationProcedure — any authenticated user, idempotency-guarded)
  *   - acceptDpa     (orgOwnerMutationProcedure — ORG_OWNER only, idempotency-guarded)
+ *   - getDpaStatus  (orgMemberProcedure — any org member)
+ *   - deactivate    (orgOwnerMutationProcedure — ORG_OWNER only, idempotency-guarded)
  */
 
 // ──────────────────────────────────────────────
@@ -803,6 +805,182 @@ describe('organizationRouter', () => {
         version: '2025-03',
         acceptedAt: expect.any(Date),
         userId: expect.any(String),
+      });
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  getDpaStatus
+  // ─────────────────────────────────────
+  describe('getDpaStatus', () => {
+    it('returns accepted: false when no DPA record exists', async () => {
+      rlsDb.dpaAcceptance.findFirst.mockResolvedValue(null);
+
+      const caller = createAuthedCaller('ORG_MEMBER');
+      const result = await caller.getDpaStatus({});
+
+      expect(result).toEqual({
+        accepted: false,
+        version: null,
+        acceptedAt: null,
+        acceptedBy: null,
+      });
+    });
+
+    it('returns accepted: true with correct details when DPA exists', async () => {
+      const acceptedAt = new Date('2024-06-15T10:00:00Z');
+      const mockDpa = {
+        version: '2024-01',
+        acceptedAt,
+        acceptedBy: {
+          id: USER_ID,
+          name: 'Test User',
+          email: 'test@example.com',
+        },
+      };
+
+      rlsDb.dpaAcceptance.findFirst.mockResolvedValue(mockDpa);
+
+      const caller = createAuthedCaller('ORG_MEMBER');
+      const result = await caller.getDpaStatus({});
+
+      expect(result).toEqual({
+        accepted: true,
+        version: '2024-01',
+        acceptedAt,
+        acceptedBy: {
+          id: USER_ID,
+          name: 'Test User',
+          email: 'test@example.com',
+        },
+      });
+    });
+
+    it('queries with correct parameters (where, orderBy, select)', async () => {
+      rlsDb.dpaAcceptance.findFirst.mockResolvedValue(null);
+
+      const caller = createAuthedCaller('ORG_MEMBER');
+      await caller.getDpaStatus({});
+
+      expect(rlsDb.dpaAcceptance.findFirst).toHaveBeenCalledWith({
+        where: { organizationId: ORG_ID },
+        orderBy: { acceptedAt: 'desc' },
+        select: {
+          version: true,
+          acceptedAt: true,
+          acceptedBy: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+    });
+
+    it('works for ORG_OWNER role as well', async () => {
+      rlsDb.dpaAcceptance.findFirst.mockResolvedValue(null);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.getDpaStatus({});
+
+      expect(result.accepted).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  deactivate
+  // ─────────────────────────────────────
+  describe('deactivate', () => {
+    it('successfully soft-deletes an active organization', async () => {
+      const activeOrg = makeMockOrg({ deletedAt: null });
+      const now = new Date();
+
+      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
+      rlsDb.organization.update.mockResolvedValue({
+        id: ORG_ID,
+        deletedAt: now,
+      });
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.deactivate({ idempotencyKey: VALID_UUID });
+
+      expect(result.organization.id).toBe(ORG_ID);
+      expect(result.organization.deletedAt).toEqual(now);
+
+      expect(rlsDb.organization.findUnique).toHaveBeenCalledWith({
+        where: { id: ORG_ID },
+        select: { id: true, deletedAt: true },
+      });
+
+      expect(rlsDb.organization.update).toHaveBeenCalledWith({
+        where: { id: ORG_ID },
+        data: { deletedAt: expect.any(Date) },
+        select: { id: true, deletedAt: true },
+      });
+    });
+
+    it('throws NOT_FOUND when organization does not exist', async () => {
+      rlsDb.organization.findUnique.mockResolvedValue(null);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+
+      await expect(
+        caller.deactivate({ idempotencyKey: VALID_UUID }),
+      ).rejects.toThrow('Organization not found');
+    });
+
+    it('throws CONFLICT when organization is already deactivated', async () => {
+      const deactivatedOrg = makeMockOrg({ deletedAt: new Date('2024-12-01') });
+      rlsDb.organization.findUnique.mockResolvedValue(deactivatedOrg);
+
+      const caller = createAuthedCaller('ORG_OWNER');
+
+      await expect(
+        caller.deactivate({ idempotencyKey: VALID_UUID }),
+      ).rejects.toThrow('Organization is already deactivated');
+    });
+
+    it('writes audit log on successful deactivation', async () => {
+      const activeOrg = makeMockOrg({ deletedAt: null });
+
+      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
+      rlsDb.organization.update.mockResolvedValue({
+        id: ORG_ID,
+        deletedAt: new Date(),
+      });
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      await caller.deactivate({ idempotencyKey: VALID_UUID });
+
+      expect(mockWriteAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'organization.deactivated',
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          entityId: ORG_ID,
+          before: { deletedAt: null },
+          after: { deletedAt: expect.any(Date) },
+          traceId: 'test-trace-id',
+        }),
+      );
+    });
+
+    it('returns correct shape with id and deletedAt', async () => {
+      const activeOrg = makeMockOrg({ deletedAt: null });
+      const deactivatedAt = new Date('2025-01-15T08:30:00Z');
+
+      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
+      rlsDb.organization.update.mockResolvedValue({
+        id: ORG_ID,
+        deletedAt: deactivatedAt,
+      });
+
+      const caller = createAuthedCaller('ORG_OWNER');
+      const result = await caller.deactivate({ idempotencyKey: VALID_UUID });
+
+      expect(result).toEqual({
+        organization: {
+          id: ORG_ID,
+          deletedAt: deactivatedAt,
+        },
       });
     });
   });
