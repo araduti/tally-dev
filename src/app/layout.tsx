@@ -1,19 +1,22 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { TRPCProvider } from '@/trpc/provider';
+import './globals.css';
 
 export const metadata: Metadata = {
-  title: "Tally",
-  description: "AI-powered multi-distributor license optimization platform",
+  title: 'Tally — AI-Powered Optimization',
+  description: 'AI-powered optimization for your entire multi-distributor stack',
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <TRPCProvider>{children}</TRPCProvider>
+      </body>
     </html>
   );
 }
