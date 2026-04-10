@@ -251,16 +251,17 @@ export const pax8Adapter: VendorAdapter = {
       totalPages = result.page.totalPages;
 
       for (const product of result.content) {
-        // Fetch pricing for each product so we can populate unitCost
+        // Fetch pricing for each product so we can populate unitCost.
+        // If pricing lookup fails we still include the product with a
+        // zero cost rather than failing the entire catalog sync.
+        // Callers should reconcile missing pricing via lastPricingFetchedAt.
         let pricing: Pax8ProductPricing | undefined;
         try {
           pricing = await pax8Fetch<Pax8ProductPricing>(
             token,
             `/products/${product.id}/pricing`,
           );
-        } catch {
-          // If pricing lookup fails we still include the product with a
-          // zero cost rather than failing the entire catalog sync.
+        } catch (_pricingError: unknown) {
           pricing = undefined;
         }
 
@@ -303,7 +304,8 @@ export const pax8Adapter: VendorAdapter = {
         productId: externalSku,
         quantity,
         billingTerm: 'Monthly',
-        startDate: new Date().toISOString().split('T')[0],
+        // Use UTC date string to avoid timezone drift
+        startDate: new Date().toISOString().slice(0, 10),
       },
     });
 
