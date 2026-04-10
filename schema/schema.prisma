@@ -255,8 +255,8 @@ model Invitation {
   expiresAt      DateTime
   createdAt      DateTime         @default(now())
 
-  inviterId      String
-  inviter        User             @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+  inviterId      String?
+  inviter        User?            @relation(fields: [inviterId], references: [id], onDelete: SetNull)
 
   @@index([organizationId])
   @@index([email])
@@ -396,6 +396,8 @@ model ProductOffering {
   minQuantity  Int?
   maxQuantity  Int?
 
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
   metadata Json @default(dbgenerated("'{}'::jsonb"))
 
   lastPricingFetchedAt DateTime?
@@ -519,6 +521,8 @@ model BillingSnapshot {
 
   // Breakdown by distributor, committed changes, etc.
   // Documented schema: { distributors: [...], committedChanges: [...] }
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
   metadata Json @default(dbgenerated("'{}'::jsonb"))
 
   createdAt DateTime @default(now())
