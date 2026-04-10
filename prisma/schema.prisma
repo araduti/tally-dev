@@ -1,0 +1,563 @@
+// =============================================================
+// Tally — Prisma Schema
+// Updated: April 10, 2026
+// Reviewed against ARCHITECTURE.md v2.3
+// Schema improvements applied: FK indexes, enum tightening,
+// explicit cascades, composite indexes, compliance fixes.
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================
+// ENUMS
+// Replacing all string-literal union fields with type-safe enums
+// =============================================================
+
+enum BillingType {
+  DIRECT_STRIPE
+  MANUAL_INVOICE
+}
+
+enum VendorType {
+  PAX8
+  INGRAM
+  TDSYNNEX
+  DIRECT
+}
+
+enum VendorConnectionStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum UnitType {
+  SEAT
+  DEVICE
+  UNIT
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  REVOKED
+}
+
+// --- RBAC Enums (Three-Tier Role Model) ---
+
+enum OrganizationType {
+  MSP      // Managed Service Provider — manages child CLIENT orgs
+  CLIENT   // Managed by an MSP parent — has parentOrganizationId
+  DIRECT   // Standalone org with no MSP hierarchy
+}
+
+enum PlatformRole {
+  SUPER_ADMIN  // Full access across all orgs (Tally staff)
+  SUPPORT      // Read-only access across all orgs (Tally staff)
+}
+
+enum MspRole {
+  MSP_OWNER      // Full control of the MSP org and all its client orgs
+  MSP_ADMIN      // Manage client orgs, billing, and provisioning
+  MSP_TECHNICIAN // Operate within assigned client orgs (read + provision)
+}
+
+enum OrgRole {
+  ORG_OWNER  // Full control — typically the customer admin
+  ORG_ADMIN  // Manage subscriptions and licenses
+  ORG_MEMBER // Read-only / limited actions
+}
+
+// =============================================================
+// 1. BETTER-AUTH CORE (Identity & Sessions)
+// =============================================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Tally staff only. Null for all regular users.
+  // Checked first in the RLS access resolution chain.
+  platformRole  PlatformRole?
+
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]
+  auditLogs     AuditLog[]
+  dpaAcceptances DpaAcceptance[]
+  sentInvitations Invitation[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Zero-trust active tenant — scopes all RLS queries for this session.
+  // Must be set before any tRPC mutation is permitted.
+  activeOrganizationId String?
+  activeOrganization   Organization? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([activeOrganizationId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// =============================================================
+// 2. BETTER-AUTH ORGANIZATION PLUGIN (The "Customer" Hub)
+// =============================================================
+
+model Organization {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  logo        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  metadata    Json?
+
+  // Soft-delete: set when org is deactivated. Null = active.
+  // Application code should filter on deletedAt IS NULL for normal queries.
+  deletedAt   DateTime?
+
+  // --- Organization Hierarchy ---
+  // Determines RBAC model: MSP members get MspRole, CLIENT/DIRECT get OrgRole
+  organizationType OrganizationType @default(DIRECT)
+
+  // Set only for CLIENT orgs — points to the managing MSP org.
+  // MSP staff access child orgs via this relation (delegated access).
+  parentOrganizationId String?
+  parentOrganization   Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
+  clientOrganizations  Organization[] @relation("OrgHierarchy")
+
+  // --- Enterprise Gates ---
+  provisioningEnabled Boolean     @default(false)
+  isContractSigned    Boolean     @default(false)
+  billingType         BillingType @default(DIRECT_STRIPE)
+
+  // --- Relations ---
+  members              Member[]
+  invitations          Invitation[]
+  sessions             Session[]             // active sessions scoped to this org
+  vendorConnections    VendorConnection[]
+  subscriptions        Subscription[]
+  purchaseTransactions PurchaseTransaction[]
+  auditLogs            AuditLog[]
+  billingSnapshots     BillingSnapshot[]
+  dpaAcceptances       DpaAcceptance[]
+
+  @@map("organization")
+}
+
+model Member {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Exactly one of these must be set, determined by Organization.organizationType:
+  //   MSP org         → set mspRole, leave orgRole null
+  //   CLIENT/DIRECT   → set orgRole, leave mspRole null
+  orgRole  OrgRole?
+  mspRole  MspRole?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("member")
+}
+
+model Invitation {
+  id             String           @id @default(cuid())
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+
+  // Role to assign upon acceptance. Use the role enum matching the org type:
+  //   MSP org       → set mspRole, leave orgRole null
+  //   CLIENT/DIRECT → set orgRole, leave mspRole null
+  orgRole  OrgRole?
+  mspRole  MspRole?
+
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+
+  inviterId      String?
+  inviter        User?            @relation(fields: [inviterId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("invitation")
+}
+
+// =============================================================
+// 3. COMPLIANCE — DPA Gate
+// Tracks per-org Data Processing Agreement acceptance.
+// Must be verified before any vendor provisioning flow begins.
+// =============================================================
+
+model DpaAcceptance {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // The user who clicked "I accept" on behalf of the organization
+  acceptedByUserId String
+  acceptedBy       User     @relation(fields: [acceptedByUserId], references: [id])
+
+  // Version of the DPA document accepted (e.g., "2024-01")
+  version    String
+  acceptedAt DateTime @default(now())
+
+  // An org can only accept a given DPA version once.
+  @@unique([organizationId, version])
+  @@index([organizationId])
+  @@index([acceptedByUserId])
+  @@map("dpa_acceptances")
+}
+
+// =============================================================
+// 4. VENDOR CONNECTIONS
+// =============================================================
+
+model VendorConnection {
+  id             String                 @id @default(cuid())
+  organizationId String
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  vendorType VendorType
+  status     VendorConnectionStatus @default(PENDING)
+  lastSyncAt DateTime?
+
+  // AES-256-GCM ciphertext. NEVER store plaintext here.
+  // Decrypted only within the vendor adapter at call time.
+  credentials String
+
+  subscriptions    Subscription[]
+  productOfferings ProductOffering[]
+
+  @@unique([organizationId, vendorType])
+  @@map("vendor_connections")
+}
+
+// =============================================================
+// 5. CANONICAL CATALOG LAYER (Product → Bundle → ProductOffering)
+//
+// Three-tier hierarchy:
+//   Product       — Atomic service (e.g., Exchange Online)
+//   Bundle        — Commercial SKU (e.g., M365 E3)
+//   ProductOffering — Distributor-specific price point
+// =============================================================
+
+model Product {
+  id            String   @id @default(cuid())
+  canonicalSku  String   @unique
+  name          String
+  friendlyName  String
+  description   String?
+  category      String?
+  unitType      UnitType
+  manufacturer  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Products belong to Bundles via a join table
+  bundleProducts BundleProduct[]
+
+  @@map("products")
+}
+
+// Bundle represents a commercial SKU composed of one or more Products.
+// e.g., "Microsoft 365 E3" = Exchange Online + Teams + SharePoint + ...
+model Bundle {
+  id           String  @id @default(cuid())
+  globalSkuId  String  @unique  // Canonical SKU for cross-distributor matching
+  name         String
+  friendlyName String
+  description  String?
+  category     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products      BundleProduct[]
+  offerings     ProductOffering[]
+  subscriptions Subscription[]
+
+  @@map("bundles")
+}
+
+// Join table: a Bundle contains many Products; a Product may appear in many Bundles
+model BundleProduct {
+  bundleId  String
+  bundle    Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([bundleId, productId])
+  @@index([productId])
+  @@map("bundle_products")
+}
+
+// Distributor-specific price point for a Bundle.
+// One Bundle → many ProductOfferings (one per distributor).
+model ProductOffering {
+  id       String @id @default(cuid())
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  vendorConnectionId String?
+  vendorConnection   VendorConnection? @relation(fields: [vendorConnectionId], references: [id], onDelete: SetNull)
+
+  sourceType   VendorType
+  externalSku  String
+
+  // Nullable: cost may not yet be fetched. Do not provision until populated.
+  effectiveUnitCost    Decimal?
+  partnerMarginPercent Decimal?
+  currency             String   @default("USD")
+
+  availability String?
+  leadTimeDays Int?
+  minQuantity  Int?
+  maxQuantity  Int?
+
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
+  metadata Json @default(dbgenerated("'{}'::jsonb"))
+
+  lastPricingFetchedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Back-relations
+  licenses             License[]
+  purchaseTransactions PurchaseTransaction[]
+
+  @@unique([bundleId, sourceType, externalSku])
+  @@index([vendorConnectionId])
+  @@index([bundleId, sourceType])
+  @@map("product_offerings")
+}
+
+// =============================================================
+// 6. SUBSCRIPTIONS & LICENSE LIFECYCLE
+// =============================================================
+
+model Subscription {
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendorConnectionId String
+  vendorConnection   VendorConnection @relation(fields: [vendorConnectionId], references: [id], onDelete: Restrict)
+
+  // The commercial Bundle this subscription fulfils
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Restrict)
+
+  externalId        String             @unique  // Distributor's subscription ID
+  status            SubscriptionStatus @default(PENDING)
+  commitmentEndDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  licenses         License[]
+  billingSnapshots BillingSnapshot[]
+
+  @@index([organizationId])
+  @@index([organizationId, status])
+  @@map("subscriptions")
+}
+
+model License {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  productOfferingId String?
+  productOffering   ProductOffering? @relation(fields: [productOfferingId], references: [id], onDelete: SetNull)
+
+  quantity        Int
+  // Staged quantity for a commitment-gated scale-down.
+  // Promoted to `quantity` by the Inngest workflow after commitmentEndDate.
+  pendingQuantity Int?
+
+  // Tracks the Inngest run responsible for promoting pendingQuantity.
+  // Required to check status, cancel, or correlate AuditLog entries.
+  inngestRunId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subscriptionId])
+  @@index([productOfferingId])
+  @@map("licenses")
+}
+
+// =============================================================
+// 7. COMMERCE — Purchase Transactions
+// =============================================================
+
+model PurchaseTransaction {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  productOfferingId String
+  productOffering   ProductOffering @relation(fields: [productOfferingId], references: [id], onDelete: Restrict)
+
+  quantity        Int
+  grossAmount     Decimal
+  ourMarginEarned Decimal
+
+  // --- Commitment Fields ---
+  nonRefundableUntil DateTime?
+  isScheduled        Boolean   @default(false)
+
+  distributorReference String?
+  status               TransactionStatus @default(COMPLETED)
+
+  // Globally unique. Required — do not allow nullable idempotency keys.
+  idempotencyKey String @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("purchase_transactions")
+}
+
+// =============================================================
+// 8. BILLING & RECONCILIATION
+// =============================================================
+
+model BillingSnapshot {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Optional: link snapshot to a specific subscription for per-sub reconciliation
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  projectedAmount Decimal
+  periodStart     DateTime
+  periodEnd       DateTime
+
+  // Breakdown by distributor, committed changes, etc.
+  // Documented schema: { distributors: [...], committedChanges: [...] }
+  // dbgenerated ensures PostgreSQL stores a native JSONB empty object,
+  // rather than relying on Prisma's string-to-JSONB coercion at runtime.
+  metadata Json @default(dbgenerated("'{}'::jsonb"))
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([subscriptionId])
+  @@index([organizationId, periodStart])
+  @@map("billing_snapshots")
+}
+
+// =============================================================
+// 9. AUDIT LOG
+// Immutable append-only. Never update or delete rows from this table.
+// =============================================================
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  // Restrict: audit logs must survive org deletion to preserve compliance trail.
+  // Archive or reassign audit logs before deleting an organization.
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  action    String   // e.g., "license.scale_down.staged", "license.scale_down.executed"
+  entityId  String?  // ID of the affected record
+  before    Json?    // State snapshot before the mutation
+  after     Json?    // State snapshot after the mutation
+  traceId   String?  // Correlates to the request traceId from proxy.ts
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([entityId])
+  @@index([organizationId, action, createdAt(sort: Desc)])
+  @@map("audit_logs")
+}
