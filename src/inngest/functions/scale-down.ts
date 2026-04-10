@@ -54,14 +54,14 @@ export const commitmentScaleDown = inngest.createFunction(
           },
         });
 
-        // Write audit log via RLS proxy
-        await db.auditLog.create({
+        // Write audit log via RLS proxy (organizationId auto-injected)
+        await (db as any).auditLog.create({
           data: {
             userId: userId ?? null,
             action: 'license.scale_down.executed',
             entityId: licenseId,
-            before: { quantity: beforeQuantity } as any,
-            after: { quantity: newQuantity } as any,
+            before: { quantity: beforeQuantity },
+            after: { quantity: newQuantity },
             traceId: traceId ?? null,
           },
         });

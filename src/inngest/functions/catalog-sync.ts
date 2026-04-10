@@ -61,13 +61,13 @@ export const catalogSync = inngest.createFunction(
             },
           });
 
-          // Write audit log
-          await db.auditLog.create({
+          // Write audit log (organizationId auto-injected by RLS proxy)
+          await (db as any).auditLog.create({
             data: {
               userId: null,
               action: 'vendor.catalog_synced',
               entityId: vendorConnectionId,
-              after: { itemCount: catalog.length } as any,
+              after: { itemCount: catalog.length },
               traceId: traceId ?? null,
             },
           });
@@ -78,12 +78,12 @@ export const catalogSync = inngest.createFunction(
             data: { status: 'ERROR' },
           });
 
-          await db.auditLog.create({
+          await (db as any).auditLog.create({
             data: {
               userId: null,
               action: 'vendor.catalog_sync_failed',
               entityId: vendorConnectionId,
-              after: { error: sanitizeErrorMessage(error) } as any,
+              after: { error: sanitizeErrorMessage(error) },
               traceId: traceId ?? null,
             },
           });

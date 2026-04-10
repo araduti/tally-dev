@@ -21,7 +21,7 @@ async function findOrgScopedLicense(
   db: any,
   licenseId: string,
   include?: Record<string, unknown>,
-) {
+): Promise<any> {
   const { prisma } = await import('@/lib/db');
   const subscriptionIds = await getOrgSubscriptionIds(db);
   if (subscriptionIds.length === 0) return null;

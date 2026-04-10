@@ -151,7 +151,7 @@ function requireRole(...allowedRoles: Array<PlatformRole | MspRole | OrgRole>) {
  * Middleware: Idempotency key enforcement for mutations.
  * The idempotency key is extracted from the parsed input.
  */
-const idempotencyGuard = t.middleware(async ({ next, input }) => {
+const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
   const parsedInput = input as Record<string, unknown> | undefined;
   const idempotencyKey = parsedInput?.idempotencyKey as string | undefined;
 
