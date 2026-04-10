@@ -1,0 +1,170 @@
+// ---------------------------------------------------------
+// 1. BETTER-AUTH CORE (Identity & Sessions)
+// ---------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  members       Member[]      // Relationship to Organizations
+  auditLogs     AuditLog[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  activeOrganizationId String? // Tracks which tenant the user is currently "in"
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+// ---------------------------------------------------------
+// 2. BETTER-AUTH ORGANIZATION PLUGIN (The "Customer" Hub)
+// ---------------------------------------------------------
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  logo        String?
+  createdAt   DateTime @default(now())
+  metadata    Json?    // For custom Tally data like BillingMode, TaxID, etc.
+
+  // Tally Enterprise Gates (Stored in metadata or explicit fields)
+  provisioningEnabled Boolean @default(false)
+  isContractSigned    Boolean @default(false)
+
+  members           Member[]
+  invitations       Invitation[]
+  vendorConnections VendorConnection[]
+  subscriptions     Subscription[]
+  auditLogs         AuditLog[]
+
+  @@map("organization")
+}
+
+model Member {
+  id             String   @id @default(cuid())
+  role           String   // Better-Auth default: "owner", "admin", "member"
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@map("member")
+}
+
+model Invitation {
+  id             String   @id
+  email          String
+  role           String?
+  status         String   // "pending", "accepted", "rejected"
+  expiresAt      DateTime
+  inviterId      String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("invitation")
+}
+
+// ---------------------------------------------------------
+// 3. TALLY BUSINESS LOGIC (Linked to Organization)
+// ---------------------------------------------------------
+
+model VendorConnection {
+  id                String       @id @default(cuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id])
+  vendorType        String       // "PAX8", "MICROSOFT_GRAPH", etc.
+  status            String       @default("PENDING")
+  lastSyncAt        DateTime?
+  credentials       Json         // Encrypted API keys/tokens
+  
+  subscriptions     Subscription[]
+
+  @@unique([organizationId, vendorType])
+}
+
+model Subscription {
+  id                  String           @id @default(cuid())
+  organizationId      String
+  organization        Organization     @relation(fields: [organizationId], references: [id])
+  vendorConnectionId  String
+  vendorConnection    VendorConnection @relation(fields: [vendorConnectionId], references: [id])
+  
+  externalId          String           @unique
+  status              String
+  commitmentEndDate   DateTime
+  
+  licenses            License[]
+  createdAt           DateTime         @default(now())
+}
+
+model License {
+  id              String       @id @default(cuid())
+  subscriptionId  String
+  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  
+  quantity        Int
+  pendingQuantity Int?         // For "Scheduled" Inngest actions
+}
+
+model AuditLog {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  
+  action         String       // e.g., "SCHEDULED_REDUCTION"
+  metadata       Json         // Change details
+  createdAt      DateTime     @default(now())
+}
