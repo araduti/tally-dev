@@ -93,7 +93,7 @@ Self-hosted Docker-first deployment. No cloud lock-in.
 
 ## Getting Started
 
-See [DEVELOPER.md](./DEVELOPER.md) for full local setup instructions.
+See [Developer.md](docs/Developer.md) for full local setup instructions.
 
 ```bash
 git clone <repo>
