@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { router, orgOwnerProcedure, orgOwnerMutationProcedure } from '../trpc/init';
-import { OrgRole, MspRole } from '@prisma/client';
+import { OrgRole, MspRole, InvitationStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError } from '@/lib/errors';
 
@@ -202,6 +202,92 @@ export const adminRouter = router({
       });
 
       return { success: true as const };
+    }),
+
+  listInvitations: orgOwnerProcedure
+    .input(z.object({
+      cursor: z.string().cuid().optional(),
+      limit: z.number().int().min(1).max(100).default(25),
+      where: z.object({
+        status: z.nativeEnum(InvitationStatus).optional(),
+      }).optional(),
+    }))
+    .query(async ({ ctx, input }) => {
+      const where: Record<string, unknown> = {};
+      if (input.where?.status) where.status = input.where.status;
+
+      const items = await ctx.db.invitation.findMany({
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
+        where,
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const hasMore = items.length > input.limit;
+      if (hasMore) items.pop();
+
+      return {
+        items: items.map((inv: any) => ({
+          id: inv.id,
+          email: inv.email,
+          orgRole: inv.orgRole,
+          mspRole: inv.mspRole,
+          status: inv.status,
+          expiresAt: inv.expiresAt,
+          createdAt: inv.createdAt,
+        })),
+        nextCursor: hasMore ? items[items.length - 1]?.id ?? null : null,
+      };
+    }),
+
+  revokeInvitation: orgOwnerMutationProcedure
+    .input(z.object({
+      invitationId: z.string().cuid(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const invitation = await ctx.db.invitation.findFirst({
+        where: { id: input.invitationId },
+      });
+
+      if (!invitation) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Invitation not found',
+          errorCode: 'ADMIN:INVITATION:NOT_FOUND',
+        });
+      }
+
+      if (invitation.status !== 'PENDING') {
+        throw createBusinessError({
+          code: 'BAD_REQUEST',
+          message: `Invitation cannot be revoked because it is ${invitation.status}`,
+          errorCode: 'ADMIN:INVITATION:INVALID_STATUS',
+        });
+      }
+
+      const updated = await ctx.db.invitation.update({
+        where: { id: invitation.id },
+        data: { status: 'REVOKED' },
+      });
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'admin.invitation_revoked',
+        entityId: invitation.id,
+        before: { status: invitation.status },
+        after: { status: updated.status },
+        traceId: ctx.traceId,
+      });
+
+      return {
+        invitation: {
+          id: updated.id,
+          status: updated.status as 'REVOKED',
+        },
+      };
     }),
 
   listAuditLogs: orgOwnerProcedure
