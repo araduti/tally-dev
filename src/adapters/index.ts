@@ -4,12 +4,13 @@ import { decrypt } from '@/lib/encryption';
 import { VendorError } from './types';
 import { pax8Adapter } from './pax8';
 import { ingramAdapter } from './ingram';
+import { tdSynnexAdapter } from './tdsynnex';
 
 // Adapter registry — add new adapters here
 const adapters: Partial<Record<VendorType, VendorAdapter>> = {
   PAX8: pax8Adapter,
   INGRAM: ingramAdapter,
-  // TDSYNNEX: tdSynnexAdapter,
+  TDSYNNEX: tdSynnexAdapter,
 };
 
 /**
