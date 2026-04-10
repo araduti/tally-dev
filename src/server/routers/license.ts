@@ -129,9 +129,16 @@ export const licenseRouter = router({
         : new Decimal(0);
       const marginEarned = grossAmount.mul(marginPercent).div(100);
 
+      if (!license.productOfferingId) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'License has no associated product offering',
+        });
+      }
+
       const purchaseTransaction = await ctx.db.purchaseTransaction.create({
         data: {
-          productOfferingId: license.productOfferingId ?? '',
+          productOfferingId: license.productOfferingId,
           quantity: delta,
           grossAmount: grossAmount.toDecimalPlaces(2),
           ourMarginEarned: marginEarned.toDecimalPlaces(2),

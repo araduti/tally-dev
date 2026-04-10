@@ -145,7 +145,7 @@ export const subscriptionRouter = router({
         },
       });
 
-      const license = await prisma.license.create({
+      const license = await ctx.db.license.create({
         data: {
           subscriptionId: subscription.id,
           productOfferingId: offering.id,
