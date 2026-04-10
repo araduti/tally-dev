@@ -16,6 +16,11 @@ async function getOrgSubscriptionIds(db: any): Promise<string[]> {
 /**
  * Finds a license scoped to the current org via the subscription join.
  * Returns null if the license doesn't exist or doesn't belong to this org.
+ *
+ * NOTE: License model lacks organizationId, so it's not in DIRECT_ORG_MODELS
+ * and can't be scoped by the RLS proxy directly. We scope indirectly by
+ * fetching org-scoped subscription IDs via the RLS proxy, then querying
+ * raw prisma with those IDs as a filter.
  */
 async function findOrgScopedLicense(
   db: any,

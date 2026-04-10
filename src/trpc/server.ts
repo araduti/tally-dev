@@ -17,7 +17,11 @@ export const api = createCaller(async () => {
   const cookieStore = await cookies();
   const headerStore = await headers();
 
-  const req = new Request(headerStore.get('x-forwarded-host') ?? 'http://localhost:3000', {
+  const host = headerStore.get('x-forwarded-host');
+  const proto = headerStore.get('x-forwarded-proto') ?? 'http';
+  const baseUrl = host ? `${proto}://${host}` : 'http://localhost:3000';
+
+  const req = new Request(baseUrl, {
     headers: {
       cookie: cookieStore.toString(),
     },
