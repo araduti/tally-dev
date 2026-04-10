@@ -28,7 +28,7 @@ const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
 /**
  * Check whether a request is within the rate limit for a given scope/identifier.
  *
- * Uses Redis INCR + EXPIRE for a fixed-window counter.
+ * Uses a fixed-window counter backed by Redis INCR + EXPIRE.
  * Redis key pattern: `ratelimit:{scope}:{identifier}`
  *
  * On Redis failure the function returns `allowed: true` so that a Redis
