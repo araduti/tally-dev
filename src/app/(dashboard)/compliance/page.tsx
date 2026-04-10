@@ -33,18 +33,7 @@ async function ComplianceContent() {
   // Use Promise.allSettled so one failure doesn't block the others
   const [auditLogsResult, dpaResult] = await Promise.allSettled([
     api.admin.listAuditLogs({}),
-    // DPA status: try to find latest acceptance via audit logs (inline approach)
-    // There's no dedicated DPA query, so we detect via the admin router context
-    (async () => {
-      try {
-        // The DPA check is done inside subscription/vendor routers,
-        // but there's no standalone DPA query. We can infer DPA status from
-        // audit logs or attempt a proxy check. For now, provide a sensible default.
-        return { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
-      } catch {
-        return { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
-      }
-    })(),
+    api.organization.getDpaStatus({}),
   ]);
 
   // Parse audit logs
@@ -66,10 +55,21 @@ async function ComplianceContent() {
     auditLogNextCursor = auditLogsResult.value.nextCursor;
   }
 
-  // Parse DPA status
-  const dpaStatus = dpaResult.status === 'fulfilled'
+  // Parse DPA status — serialize acceptedAt to ISO string and acceptedBy to display name
+  const rawDpa = dpaResult.status === 'fulfilled'
     ? dpaResult.value
     : { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
+
+  const dpaStatus = {
+    accepted: rawDpa.accepted,
+    version: rawDpa.version,
+    acceptedAt: rawDpa.acceptedAt instanceof Date
+      ? rawDpa.acceptedAt.toISOString()
+      : rawDpa.acceptedAt,
+    acceptedBy: rawDpa.acceptedBy && typeof rawDpa.acceptedBy === 'object'
+      ? (rawDpa.acceptedBy.name ?? rawDpa.acceptedBy.email)
+      : rawDpa.acceptedBy,
+  };
 
   return (
     <ComplianceClient
