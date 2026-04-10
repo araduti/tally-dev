@@ -1,7 +1,23 @@
 import { inngest } from '../client';
 import { withTenantContext } from '@/lib/tenant';
-import { prisma } from '@/lib/db';
+import { createRLSProxy } from '@/lib/rls-proxy';
 import { getAdapter, decryptCredentials } from '@/adapters';
+
+/**
+ * Maximum length for vendor error messages stored in audit logs.
+ * Prevents credential leakage from verbose vendor error responses.
+ */
+const MAX_ERROR_MSG_LENGTH = 200;
+
+/** Sanitize vendor error messages before persisting to audit log. */
+function sanitizeErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return 'Unknown error';
+  // Truncate and strip anything that looks like a token/key
+  return error.message
+    .slice(0, MAX_ERROR_MSG_LENGTH)
+    .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')
+    .replace(/token[=:]\s*\S+/gi, 'token=[REDACTED]');
+}
 
 /**
  * Catalog Sync Workflow
@@ -17,11 +33,13 @@ export const catalogSync = inngest.createFunction(
   },
   { event: 'vendor/catalog-sync.requested' },
   async ({ event, step }) => {
-    const { vendorConnectionId, organizationId } = event.data;
+    const { vendorConnectionId, organizationId, traceId } = event.data;
 
     await step.run('sync-catalog', async () => {
       await withTenantContext(organizationId, async () => {
-        const connection = await prisma.vendorConnection.findUnique({
+        const db = createRLSProxy(organizationId);
+
+        const connection = await db.vendorConnection.findFirst({
           where: { id: vendorConnectionId },
         });
 
@@ -35,7 +53,7 @@ export const catalogSync = inngest.createFunction(
           const catalog = await adapter.getProductCatalog(credentials);
 
           // Update the last sync timestamp
-          await prisma.vendorConnection.update({
+          await db.vendorConnection.update({
             where: { id: vendorConnectionId },
             data: {
               lastSyncAt: new Date(),
@@ -43,30 +61,30 @@ export const catalogSync = inngest.createFunction(
             },
           });
 
-          // Write audit log
-          await prisma.auditLog.create({
+          // Write audit log (organizationId auto-injected by RLS proxy)
+          await (db as any).auditLog.create({
             data: {
-              organizationId,
               userId: null,
               action: 'vendor.catalog_synced',
               entityId: vendorConnectionId,
-              after: { itemCount: catalog.length } as any,
+              after: { itemCount: catalog.length },
+              traceId: traceId ?? null,
             },
           });
         } catch (error) {
           // Update connection status to ERROR
-          await prisma.vendorConnection.update({
+          await db.vendorConnection.update({
             where: { id: vendorConnectionId },
             data: { status: 'ERROR' },
           });
 
-          await prisma.auditLog.create({
+          await (db as any).auditLog.create({
             data: {
-              organizationId,
               userId: null,
               action: 'vendor.catalog_sync_failed',
               entityId: vendorConnectionId,
-              after: { error: error instanceof Error ? error.message : 'Unknown error' } as any,
+              after: { error: sanitizeErrorMessage(error) },
+              traceId: traceId ?? null,
             },
           });
 

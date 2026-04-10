@@ -272,7 +272,9 @@ model Invitation {
 model DpaAcceptance {
   id             String       @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  // Restrict: DPA acceptance records must survive org deletion to preserve compliance trail.
+  // Same rationale as AuditLog — these are regulatory proof of consent.
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   // The user who clicked "I accept" on behalf of the organization
   acceptedByUserId String

@@ -151,7 +151,7 @@ function requireRole(...allowedRoles: Array<PlatformRole | MspRole | OrgRole>) {
  * Middleware: Idempotency key enforcement for mutations.
  * The idempotency key is extracted from the parsed input.
  */
-const idempotencyGuard = t.middleware(async ({ next, input }) => {
+const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
   const parsedInput = input as Record<string, unknown> | undefined;
   const idempotencyKey = parsedInput?.idempotencyKey as string | undefined;
 
@@ -162,7 +162,9 @@ const idempotencyGuard = t.middleware(async ({ next, input }) => {
     });
   }
 
-  const cacheKey = `idempotency:${idempotencyKey}`;
+  // Scope to organizationId to prevent cross-org cache collisions
+  const orgId = (ctx as any).organizationId ?? 'global';
+  const cacheKey = `idempotency:${orgId}:${idempotencyKey}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {

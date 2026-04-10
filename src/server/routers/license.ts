@@ -4,6 +4,39 @@ import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
+/**
+ * Returns subscription IDs belonging to the current org.
+ * Used to scope License queries (License lacks organizationId).
+ */
+async function getOrgSubscriptionIds(db: any): Promise<string[]> {
+  const subscriptions = await db.subscription.findMany({ select: { id: true } });
+  return subscriptions.map((s: any) => s.id);
+}
+
+/**
+ * Finds a license scoped to the current org via the subscription join.
+ * Returns null if the license doesn't exist or doesn't belong to this org.
+ *
+ * NOTE: License model lacks organizationId, so it's not in DIRECT_ORG_MODELS
+ * and can't be scoped by the RLS proxy directly. We scope indirectly by
+ * fetching org-scoped subscription IDs via the RLS proxy, then querying
+ * raw prisma with those IDs as a filter.
+ */
+async function findOrgScopedLicense(
+  db: any,
+  licenseId: string,
+  include?: Record<string, unknown>,
+): Promise<any> {
+  const { prisma } = await import('@/lib/db');
+  const subscriptionIds = await getOrgSubscriptionIds(db);
+  if (subscriptionIds.length === 0) return null;
+
+  return prisma.license.findFirst({
+    where: { id: licenseId, subscriptionId: { in: subscriptionIds } },
+    ...(include ? { include } : {}),
+  });
+}
+
 export const licenseRouter = router({
   list: orgMemberProcedure
     .input(z.object({
@@ -16,11 +49,7 @@ export const licenseRouter = router({
     }))
     .query(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
-      // Licenses are scoped via subscription, so we need a join
-      const subscriptions = await ctx.db.subscription.findMany({
-        select: { id: true },
-      });
-      const subscriptionIds = subscriptions.map((s: any) => s.id);
+      const subscriptionIds = await getOrgSubscriptionIds(ctx.db);
 
       const where: Record<string, unknown> = { subscriptionId: { in: subscriptionIds } };
       if (input.where?.subscriptionId) where.subscriptionId = input.where.subscriptionId;
@@ -52,19 +81,9 @@ export const licenseRouter = router({
       licenseId: z.string().cuid(),
     }))
     .query(async ({ ctx, input }) => {
-      const { prisma } = await import('@/lib/db');
-      // Verify org scope through subscription
-      const subscriptions = await ctx.db.subscription.findMany({
-        select: { id: true },
-      });
-      const subscriptionIds = subscriptions.map((s: any) => s.id);
-
-      const license = await prisma.license.findFirst({
-        where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
-        include: {
-          subscription: { include: { bundle: true } },
-          productOffering: true,
-        },
+      const license = await findOrgScopedLicense(ctx.db, input.licenseId, {
+        subscription: { include: { bundle: true } },
+        productOffering: true,
       });
 
       if (!license) {
@@ -86,13 +105,10 @@ export const licenseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
-      // Verify org scope
-      const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
-      const license = await prisma.license.findFirst({
-        where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
-        include: { productOffering: true, subscription: true },
+      const license = await findOrgScopedLicense(ctx.db, input.licenseId, {
+        productOffering: true,
+        subscription: true,
       });
 
       if (!license) {
@@ -100,6 +116,15 @@ export const licenseRouter = router({
           code: 'NOT_FOUND',
           message: 'License not found',
           errorCode: 'LICENSE:QUANTITY:NOT_FOUND',
+        });
+      }
+
+      // Validate productOfferingId BEFORE any writes
+      if (!license.productOfferingId) {
+        throw createBusinessError({
+          code: 'PRECONDITION_FAILED',
+          message: 'License has no associated product offering',
+          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
         });
       }
 
@@ -142,14 +167,6 @@ export const licenseRouter = router({
         : new Decimal(0);
       const marginEarned = grossAmount.mul(marginPercent).div(100);
 
-      if (!license.productOfferingId) {
-        throw createBusinessError({
-          code: 'PRECONDITION_FAILED',
-          message: 'License has no associated product offering',
-          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
-        });
-      }
-
       const purchaseTransaction = await ctx.db.purchaseTransaction.create({
         data: {
           productOfferingId: license.productOfferingId,
@@ -183,12 +200,10 @@ export const licenseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
-      const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
-      const license = await prisma.license.findFirst({
-        where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
-        include: { productOffering: true, subscription: true },
+      const license = await findOrgScopedLicense(ctx.db, input.licenseId, {
+        productOffering: true,
+        subscription: true,
       });
 
       if (!license) {
@@ -290,12 +305,8 @@ export const licenseRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
-      const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
-      const license = await prisma.license.findFirst({
-        where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
-      });
+      const license = await findOrgScopedLicense(ctx.db, input.licenseId);
 
       if (!license) {
         throw createBusinessError({

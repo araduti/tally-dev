@@ -17,8 +17,7 @@ export const organizationRouter = router({
   get: orgMemberProcedure
     .input(z.object({}))
     .query(async ({ ctx }) => {
-      const { prisma } = await import('@/lib/db');
-      const org = await prisma.organization.findUnique({
+      const org = await ctx.db.organization.findUnique({
         where: { id: ctx.organizationId! },
       });
 
@@ -42,8 +41,7 @@ export const organizationRouter = router({
       idempotencyKey: z.string().uuid(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { prisma } = await import('@/lib/db');
-      const org = await prisma.organization.findUnique({
+      const org = await ctx.db.organization.findUnique({
         where: { id: ctx.organizationId! },
       });
 
@@ -67,7 +65,7 @@ export const organizationRouter = router({
       if (metadata !== undefined) {
         updateData.metadata = metadata;
       }
-      const updated = await prisma.organization.update({
+      const updated = await ctx.db.organization.update({
         where: { id: ctx.organizationId! },
         data: updateData,
       });

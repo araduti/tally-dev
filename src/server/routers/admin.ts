@@ -52,7 +52,7 @@ export const adminRouter = router({
         });
       }
 
-      // Check if already a member
+      // Check if already a member (use raw prisma for cross-org User lookup — User is platform-wide)
       const { prisma } = await import('@/lib/db');
       const existingUser = await prisma.user.findUnique({
         where: { email: input.email },
@@ -63,10 +63,11 @@ export const adminRouter = router({
           where: { userId: existingUser.id },
         });
         if (existingMember) {
+          // Use a generic message to prevent email enumeration
           throw createBusinessError({
             code: 'CONFLICT',
-            message: 'User is already a member of this organization',
-            errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS',
+            message: 'Cannot send invitation to this email address',
+            errorCode: 'ADMIN:INVITATION:CONFLICT',
           });
         }
       }
@@ -76,10 +77,11 @@ export const adminRouter = router({
         where: { email: input.email, status: 'PENDING' },
       });
       if (existingInvitation) {
+        // Use same generic message to prevent enumeration
         throw createBusinessError({
           code: 'CONFLICT',
-          message: 'An invitation is already pending for this email',
-          errorCode: 'ADMIN:INVITATION:ALREADY_PENDING',
+          message: 'Cannot send invitation to this email address',
+          errorCode: 'ADMIN:INVITATION:CONFLICT',
         });
       }
 
