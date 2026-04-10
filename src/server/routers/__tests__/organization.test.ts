@@ -12,7 +12,7 @@
 // vi.hoisted: create mock helpers available to vi.mock factories.
 // ──────────────────────────────────────────────
 
-const { prisma, buildDbProxy, mockWriteAuditLog, mockRedis } = vi.hoisted(() => {
+const { prisma, rlsDb, buildDbProxy, mockWriteAuditLog, mockRedis } = vi.hoisted(() => {
   function createModelProxy(): any {
     const store: Record<string, any> = {};
     return new Proxy(store, {
@@ -42,7 +42,10 @@ const { prisma, buildDbProxy, mockWriteAuditLog, mockRedis } = vi.hoisted(() => 
     setex: vi.fn().mockResolvedValue('OK'),
   };
 
-  return { prisma: buildDbProxy(), buildDbProxy, mockWriteAuditLog, mockRedis };
+  // `rlsDb` is the stable proxy that createRLSProxy always returns.
+  // The organization router reads from ctx.db, which the isAuthenticated
+  // middleware replaces with the return value of createRLSProxy.
+  return { prisma: buildDbProxy(), rlsDb: buildDbProxy(), buildDbProxy, mockWriteAuditLog, mockRedis };
 });
 
 vi.mock('@/lib/db', () => ({ prisma }));
@@ -62,7 +65,7 @@ vi.mock('@/lib/redis', () => ({
 }));
 
 vi.mock('@/lib/rls-proxy', () => ({
-  createRLSProxy: vi.fn(() => buildDbProxy()),
+  createRLSProxy: vi.fn(() => rlsDb),
 }));
 
 // Replace mutation procedures with their query counterparts so the
@@ -76,6 +79,7 @@ vi.mock('@/server/trpc/init', async () => {
     ...actual,
     orgOwnerMutationProcedure: actual.orgOwnerProcedure,
     mspAdminMutationProcedure: actual.mspAdminProcedure,
+    authenticatedMutationProcedure: actual.authenticatedProcedure,
   };
 });
 
@@ -205,19 +209,19 @@ describe('organizationRouter', () => {
   describe('get', () => {
     it('returns organization details for a valid org member', async () => {
       const mockOrg = makeMockOrg();
-      prisma.organization.findUnique.mockResolvedValue(mockOrg);
+      rlsDb.organization.findUnique.mockResolvedValue(mockOrg);
 
       const caller = createAuthedCaller('ORG_OWNER');
       const result = await caller.get({});
 
       expect(result).toEqual(mockOrg);
-      expect(prisma.organization.findUnique).toHaveBeenCalledWith({
+      expect(rlsDb.organization.findUnique).toHaveBeenCalledWith({
         where: { id: ORG_ID },
       });
     });
 
     it('throws NOT_FOUND when organization does not exist', async () => {
-      prisma.organization.findUnique.mockResolvedValue(null);
+      rlsDb.organization.findUnique.mockResolvedValue(null);
 
       const caller = createAuthedCaller('ORG_OWNER');
       await expect(caller.get({})).rejects.toThrow('Organization not found');
@@ -233,8 +237,8 @@ describe('organizationRouter', () => {
       const updatedOrg = makeMockOrg({ name: 'Updated Name' });
 
       // First call: find existing org; second call: after update
-      prisma.organization.findUnique.mockResolvedValue(existingOrg);
-      prisma.organization.update.mockResolvedValue(updatedOrg);
+      rlsDb.organization.findUnique.mockResolvedValue(existingOrg);
+      rlsDb.organization.update.mockResolvedValue(updatedOrg);
 
       const caller = createAuthedCaller('ORG_OWNER');
       const result = await caller.update({
@@ -243,7 +247,7 @@ describe('organizationRouter', () => {
       });
 
       expect(result.organization).toEqual(updatedOrg);
-      expect(prisma.organization.update).toHaveBeenCalledWith({
+      expect(rlsDb.organization.update).toHaveBeenCalledWith({
         where: { id: ORG_ID },
         data: { name: 'Updated Name' },
       });
@@ -258,7 +262,7 @@ describe('organizationRouter', () => {
     });
 
     it('throws NOT_FOUND when organization does not exist for update', async () => {
-      prisma.organization.findUnique.mockResolvedValue(null);
+      rlsDb.organization.findUnique.mockResolvedValue(null);
 
       const caller = createAuthedCaller('ORG_OWNER');
       await expect(
@@ -270,8 +274,8 @@ describe('organizationRouter', () => {
       const existingOrg = makeMockOrg();
       const updatedOrg = makeMockOrg({ metadata: { key: 'value' } });
 
-      prisma.organization.findUnique.mockResolvedValue(existingOrg);
-      prisma.organization.update.mockResolvedValue(updatedOrg);
+      rlsDb.organization.findUnique.mockResolvedValue(existingOrg);
+      rlsDb.organization.update.mockResolvedValue(updatedOrg);
 
       const caller = createAuthedCaller('ORG_OWNER');
       const result = await caller.update({
@@ -280,7 +284,7 @@ describe('organizationRouter', () => {
       });
 
       expect(result.organization.metadata).toEqual({ key: 'value' });
-      expect(prisma.organization.update).toHaveBeenCalledWith({
+      expect(rlsDb.organization.update).toHaveBeenCalledWith({
         where: { id: ORG_ID },
         data: { metadata: { key: 'value' } },
       });

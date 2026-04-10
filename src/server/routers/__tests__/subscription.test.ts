@@ -559,9 +559,9 @@ describe('subscriptionRouter', () => {
   describe('create', () => {
     /**
      * Sets up all prerequisite mocks for a successful create.
-     * Uses `rlsDb` for RLS-scoped calls (dpaAcceptance, vendorConnection,
-     * subscription, license, purchaseTransaction) and `prisma` for global
-     * calls (organization, productOffering).
+     * Uses `rlsDb` for RLS-scoped calls (dpaAcceptance, organization,
+     * vendorConnection, subscription, license, purchaseTransaction)
+     * and `prisma` for global calls (productOffering).
      */
     function setupCreateMocks(
       overrides: {
@@ -576,8 +576,8 @@ describe('subscriptionRouter', () => {
         version: '2024-01',
       });
 
-      // Provisioning enabled (via global prisma)
-      prisma.organization.findUnique.mockResolvedValue({
+      // Provisioning enabled (via ctx.db → rlsDb)
+      rlsDb.organization.findUnique.mockResolvedValue({
         id: ORG_ID,
         provisioningEnabled: true,
         ...overrides.org,
@@ -795,7 +795,7 @@ describe('subscriptionRouter', () => {
     it('throws PRECONDITION_FAILED when provisioning is disabled', async () => {
       const caller = createAuthedCaller('ORG_OWNER');
       setupCreateMocks();
-      prisma.organization.findUnique.mockResolvedValue({
+      rlsDb.organization.findUnique.mockResolvedValue({
         id: ORG_ID,
         provisioningEnabled: false,
       });
@@ -815,7 +815,7 @@ describe('subscriptionRouter', () => {
     it('throws PRECONDITION_FAILED when organization not found', async () => {
       const caller = createAuthedCaller('ORG_OWNER');
       setupCreateMocks();
-      prisma.organization.findUnique.mockResolvedValue(null);
+      rlsDb.organization.findUnique.mockResolvedValue(null);
 
       await expect(
         caller.create({
