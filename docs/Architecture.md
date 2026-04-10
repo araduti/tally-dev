@@ -324,13 +324,19 @@ User requests scale-down
 
 ### Error Classes
 
-| Error Type | Handling Strategy |
-|---|---|
-| Validation error (Zod) | Rejected at the router boundary; client receives a typed error. |
-| Vendor API error | Caught in the adapter layer; written to `AuditLog`; surfaced to the caller. |
-| Commitment violation | Blocked at business logic; returns a structured error with `commitmentEndDate`. |
-| Inngest step failure | Automatic retry with exponential backoff; alerting after max retries exceeded. |
-| RBAC violation | Rejected at `proxy.ts`; returns a 403 with no internal detail leaked. |
+All business errors use a hierarchical `DOMAIN:CATEGORY:CODE` format with optional structured recovery hints. See [API-Conventions.md §6](../docs/API-Conventions.md#6-error-handling) for the full error catalog.
+
+| Error Type | Example Code | Handling Strategy |
+|---|---|---|
+| Validation error (Zod) | — | Rejected at the router boundary; client receives a typed `BAD_REQUEST` error. |
+| Auth / RBAC violation | `AUTH:RBAC:INSUFFICIENT` | Rejected at `proxy.ts`; returns 403 with `recovery: REQUEST_ACCESS`. No internal detail leaked. |
+| Vendor API error | `VENDOR:API:UPSTREAM_ERROR` | Caught in the adapter layer; written to `AuditLog`; surfaced as 500 with safe message only. |
+| Vendor auth expired | `VENDOR:AUTH:EXPIRED` | Returns 412 with `recovery: REAUTH_VENDOR`; vendor connection set to stalled state. |
+| Commitment violation | `LICENSE:NCE:WINDOW_ACTIVE` | Blocked at business logic; returns 412 with `recovery: SCHEDULE_FOR_RENEWAL` and `commitmentEndDate`. |
+| Compliance gate | `COMPLIANCE:DPA:NOT_ACCEPTED` | Returns 412 with `recovery: ACCEPT_DPA`; provisioning blocked until DPA is signed. |
+| Sync staleness | `DATA:SYNC:STALE` | Returns 412 with `recovery: FORCE_SYNC`; provisioning blocked until fresh data is available. |
+| Queue conflict | `PROVISION:QUEUE:CONFLICT` | Returns 409 with `recovery: REVIEW_QUEUE`; shows existing scheduled action. |
+| Inngest step failure | — | Automatic retry with exponential backoff; alerting after max retries exceeded. |
 
 ### Tracing
 

@@ -195,16 +195,34 @@ const orderByInput = z.object({
 
 ### Error Response Shape
 
-All errors are returned as `TRPCError` instances with a safe, client-facing message. Internal details (stack traces, raw SQL errors) are never leaked.
+All errors use two layers:
+
+1. **tRPC transport code** — the HTTP-semantic category (e.g., `PRECONDITION_FAILED` → 412)
+2. **Hierarchical business code** — a stable, namespaced `errorCode` in `cause` that clients and AI agents can route on programmatically
+
+Every `TRPCError` carries a safe, client-facing `message`. Internal details (stack traces, raw SQL errors) are never leaked.
 
 ```typescript
 throw new TRPCError({
-  code: 'NOT_FOUND',
-  message: 'Subscription not found',
+  code: 'PRECONDITION_FAILED',                // Layer 1 — transport
+  message: 'Scale-down blocked by active commitment window',
+  cause: {
+    errorCode: 'LICENSE:NCE:WINDOW_ACTIVE',   // Layer 2 — business code
+    recovery: {                                // Optional — structured recovery hint
+      action: 'SCHEDULE_FOR_RENEWAL',
+      label: 'Schedule for Next Renewal',
+      params: {
+        commitmentEndDate: license.subscription.commitmentEndDate,
+        licenseId: license.id,
+      },
+    },
+  },
 });
 ```
 
-### Standard Error Codes
+### Transport Codes (Layer 1)
+
+These are standard tRPC error codes used for HTTP-level routing. Every error uses exactly one of these:
 
 | tRPC Code | HTTP | When to Use |
 |---|---|---|
@@ -212,38 +230,219 @@ throw new TRPCError({
 | `UNAUTHORIZED` | 401 | No valid session |
 | `FORBIDDEN` | 403 | Valid session but insufficient role |
 | `NOT_FOUND` | 404 | Entity not found (within RLS scope) |
-| `CONFLICT` | 409 | Idempotency key collision, duplicate resource |
-| `PRECONDITION_FAILED` | 412 | Business rule violation (e.g., commitment window active) |
+| `CONFLICT` | 409 | Idempotency key collision, duplicate resource, queue conflict |
+| `PRECONDITION_FAILED` | 412 | Business rule violation (commitment window, DPA gate, stale data) |
 | `TOO_MANY_REQUESTS` | 429 | Rate limit exceeded |
 | `INTERNAL_SERVER_ERROR` | 500 | Unexpected errors (logged, never details to client) |
 
+### Business Error Codes (Layer 2)
+
+Business errors use a hierarchical `DOMAIN:CATEGORY:CODE` format in `cause.errorCode`. This enables clients to:
+
+- Match broadly on `AUTH:*` for all auth errors
+- Match on `VENDOR:AUTH:*` for all vendor credential errors
+- Match on `LICENSE:NCE:WINDOW_ACTIVE` for a specific business case
+
+#### Error Code Format
+
+```
+DOMAIN:CATEGORY:CODE
+  │       │       └── Specific error condition (e.g., WINDOW_ACTIVE)
+  │       └────────── Error category within the domain (e.g., NCE, AUTH, QUANTITY)
+  └─────────────────── Business domain (e.g., LICENSE, VENDOR, AUTH)
+```
+
+#### Error Code Domains
+
+| Domain | Maps To | Description |
+|---|---|---|
+| `AUTH` | `proxy.ts` | Session validation, RBAC, org context |
+| `CATALOG` | `catalog` router | Bundles, offerings, pricing |
+| `LICENSE` | `license` router | Seat management, scale-up/down, commitments |
+| `SUBSCRIPTION` | `subscription` router | Subscription lifecycle |
+| `VENDOR` | `vendor` router | Distributor connections, syncing |
+| `BILLING` | `billing` router | Transactions, snapshots, invoicing |
+| `COMPLIANCE` | Cross-cutting | DPA gates, contract signing |
+| `PROVISION` | Cross-cutting | Provisioning validation, queue management |
+| `DATA` | Cross-cutting | Sync freshness, cache staleness |
+| `ADMIN` | `admin` router | Members, invitations, roles |
+
 ### Business Error Catalog
 
-For business logic errors, include a structured `cause` with a stable error code that clients can programmatically handle:
+#### AUTH — Session & Access Control
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `AUTH:SESSION:NO_ORG` | `PRECONDITION_FAILED` | User is logged in but `activeOrganizationId` is not set | `REDIRECT_ORG_SWITCHER` |
+| `AUTH:RBAC:INSUFFICIENT` | `FORBIDDEN` | Role resolved but lacks required permission for this action | `REQUEST_ACCESS` |
+| `AUTH:RBAC:MSP_DELEGATION_DENIED` | `FORBIDDEN` | MSP user's role doesn't cover this action on the client org | `REQUEST_ACCESS` |
+
+#### VENDOR — Distributor Connections & APIs
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `VENDOR:AUTH:EXPIRED` | `PRECONDITION_FAILED` | VendorConnection credentials are expired or revoked | `REAUTH_VENDOR` |
+| `VENDOR:AUTH:DISCONNECTED` | `PRECONDITION_FAILED` | VendorConnection status is `DISCONNECTED` | `REAUTH_VENDOR` |
+| `VENDOR:API:UPSTREAM_ERROR` | `INTERNAL_SERVER_ERROR` | Distributor API returned an error | `CONTACT_SUPPORT` |
+| `VENDOR:API:RATE_LIMITED` | `TOO_MANY_REQUESTS` | Distributor API quota exceeded | `NONE` |
+
+#### LICENSE — Seat Management & Commitments
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `LICENSE:NCE:WINDOW_ACTIVE` | `PRECONDITION_FAILED` | Scale-down blocked by active NCE commitment window | `SCHEDULE_FOR_RENEWAL` |
+| `LICENSE:QUANTITY:OUT_OF_RANGE` | `BAD_REQUEST` | Requested quantity outside `minQuantity`/`maxQuantity` bounds | `NONE` |
+| `LICENSE:SCALE_DOWN:PENDING` | `CONFLICT` | A `pendingQuantity` is already staged for this license | `REVIEW_QUEUE` |
+
+#### CATALOG — Offerings & Pricing
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `CATALOG:OFFERING:UNAVAILABLE` | `PRECONDITION_FAILED` | ProductOffering is out of stock or delisted | `NONE` |
+| `CATALOG:OFFERING:PRICE_MISSING` | `PRECONDITION_FAILED` | `effectiveUnitCost` is null — pricing not yet fetched | `FORCE_SYNC` |
+
+#### PROVISION — Provisioning Validation
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `PROVISION:COST:MISMATCH` | `PRECONDITION_FAILED` | Estimated proration differs from vendor actuals by > 1% | `MANUAL_OVERRIDE` |
+| `PROVISION:QUEUE:CONFLICT` | `CONFLICT` | A conflicting action is already scheduled for this resource | `REVIEW_QUEUE` |
+| `PROVISION:GATE:DISABLED` | `PRECONDITION_FAILED` | `Organization.provisioningEnabled` is false — contract not signed | `SIGN_CONTRACT` |
+
+#### COMPLIANCE — Legal & Regulatory Gates
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `COMPLIANCE:DPA:NOT_ACCEPTED` | `PRECONDITION_FAILED` | DPA not yet signed — provisioning blocked | `ACCEPT_DPA` |
+| `COMPLIANCE:CONTRACT:UNSIGNED` | `PRECONDITION_FAILED` | Organization contract not signed — org not activated | `SIGN_CONTRACT` |
+
+#### DATA — Sync & Freshness
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `DATA:SYNC:STALE` | `PRECONDITION_FAILED` | Last successful vendor sync > 24 hours ago — data may be outdated | `FORCE_SYNC` |
+
+#### ADMIN — Member & Role Management
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `ADMIN:MEMBER:ALREADY_EXISTS` | `CONFLICT` | User already has a Member record in this organization | `NONE` |
+
+### Recovery Hints
+
+Every business error may include an optional `recovery` object in `cause`. Recovery hints are **suggestions** — the client (UI or AI agent) decides whether and how to act on them.
+
+#### Recovery Action Types
+
+| Action | Description | Typical UI Behavior |
+|---|---|---|
+| `REDIRECT_ORG_SWITCHER` | User must select an org context | Navigate to org switcher / onboarding |
+| `REQUEST_ACCESS` | User needs a higher role | Show "Request Access" flow or contact admin |
+| `SCHEDULE_FOR_RENEWAL` | Action blocked now, can be scheduled for commitment end | Show scheduling UI with `commitmentEndDate` |
+| `REAUTH_VENDOR` | Vendor credentials need re-authorization | Redirect to vendor connection settings |
+| `MANUAL_OVERRIDE` | Automated action halted, user approval required | Show diff and confirm/cancel dialog |
+| `REVIEW_QUEUE` | Conflicting scheduled action exists | Show pending actions list with replace/cancel options |
+| `FORCE_SYNC` | Data is stale, sync needed before proceeding | Trigger sync and retry the original action |
+| `ACCEPT_DPA` | DPA acceptance required | Show DPA acceptance flow |
+| `SIGN_CONTRACT` | Contract signing required to activate org | Redirect to contract signing flow |
+| `CONTACT_SUPPORT` | No automated recovery — support ticket needed | Show support contact / ticket creation |
+| `NONE` | No automated recovery available | Display the error message only |
+
+#### Recovery Object Shape
+
+```typescript
+recovery: {
+  action: string,   // One of the recovery action types above
+  label: string,    // Human-readable button/action text (e.g., "Schedule for Next Renewal")
+  params: {         // Contextual data the client needs to execute the recovery
+    // Varies by action — see examples below
+  },
+}
+```
+
+#### Recovery Params by Action
+
+| Action | Expected Params |
+|---|---|
+| `REDIRECT_ORG_SWITCHER` | — (no params needed) |
+| `REQUEST_ACCESS` | `requiredRole`, `currentRole` |
+| `SCHEDULE_FOR_RENEWAL` | `commitmentEndDate`, `licenseId` |
+| `REAUTH_VENDOR` | `vendorType`, `vendorConnectionId` |
+| `MANUAL_OVERRIDE` | `estimated`, `actual`, `diffPercent` |
+| `REVIEW_QUEUE` | `conflictingActionId`, `scheduledAt` |
+| `FORCE_SYNC` | `vendorConnectionId`, `lastSyncAt` |
+| `ACCEPT_DPA` | `organizationId`, `latestVersion` |
+| `SIGN_CONTRACT` | `organizationId` |
+| `CONTACT_SUPPORT` | `vendorType`, `retryAfter` (optional) |
+
+### Error Handling Examples
+
+#### Simple error (no recovery)
 
 ```typescript
 throw new TRPCError({
-  code: 'PRECONDITION_FAILED',
-  message: 'Cannot reduce quantity during active commitment window',
+  code: 'BAD_REQUEST',
+  message: 'Requested quantity exceeds maximum allowed',
   cause: {
-    errorCode: 'COMMITMENT_WINDOW_ACTIVE',
-    commitmentEndDate: license.subscription.commitmentEndDate,
+    errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
+    recovery: {
+      action: 'NONE',
+      label: 'Adjust quantity',
+      params: { min: 1, max: 300, requested: 500 },
+    },
   },
 });
 ```
 
-| Error Code | Domain | Description |
-|---|---|---|
-| `COMMITMENT_WINDOW_ACTIVE` | License | Scale-down blocked by NCE commitment |
-| `DPA_NOT_ACCEPTED` | Compliance | Provisioning blocked — DPA not yet signed |
-| `VENDOR_CONNECTION_INACTIVE` | Vendor | Vendor credentials are expired or disconnected |
-| `VENDOR_API_ERROR` | Vendor | Upstream distributor API returned an error |
-| `PROVISIONING_DISABLED` | Organization | Org has not completed contract signing |
-| `OFFERING_UNAVAILABLE` | Catalog | ProductOffering is out of stock or delisted |
-| `OFFERING_PRICE_MISSING` | Catalog | Effective unit cost has not been fetched yet |
-| `QUANTITY_OUT_OF_RANGE` | License | Requested quantity exceeds min/max bounds |
-| `PENDING_SCALE_DOWN_EXISTS` | License | A scale-down is already staged for this license |
-| `MEMBER_ALREADY_EXISTS` | Admin | User already has a Member record in this org |
+#### Error with automated recovery hint
+
+```typescript
+throw new TRPCError({
+  code: 'PRECONDITION_FAILED',
+  message: 'Vendor credentials have expired',
+  cause: {
+    errorCode: 'VENDOR:AUTH:EXPIRED',
+    recovery: {
+      action: 'REAUTH_VENDOR',
+      label: 'Reconnect Vendor',
+      params: {
+        vendorType: 'PAX8',
+        vendorConnectionId: connection.id,
+      },
+    },
+  },
+});
+```
+
+#### Error with queue conflict
+
+```typescript
+throw new TRPCError({
+  code: 'CONFLICT',
+  message: 'A scale-down is already scheduled for this license',
+  cause: {
+    errorCode: 'LICENSE:SCALE_DOWN:PENDING',
+    recovery: {
+      action: 'REVIEW_QUEUE',
+      label: 'Review Pending Changes',
+      params: {
+        licenseId: license.id,
+        pendingQuantity: license.pendingQuantity,
+        inngestRunId: license.inngestRunId,
+      },
+    },
+  },
+});
+```
+
+### Rules
+
+1. **Never leak internals** — `message` must be safe for end users. No stack traces, SQL, or internal IDs beyond what the client already knows.
+2. **Always use Layer 1 + Layer 2** — Every business error must set both the tRPC `code` (transport) and `cause.errorCode` (business).
+3. **Recovery hints are optional but encouraged** — If a clear next step exists, include `recovery`. If not, omit it or use `action: 'NONE'`.
+4. **Error codes are a stable contract** — Once shipped, an error code is never renamed or removed. New codes are added freely. Deprecation follows the process in [§11](#11-versioning-strategy).
+5. **`cause.errorCode` is the programmatic key** — Clients must never parse `message` for logic. The `message` is for humans; the `errorCode` is for code.
+6. **Vendor errors are wrapped** — Raw distributor API errors are caught in the adapter layer and re-thrown as `VENDOR:API:UPSTREAM_ERROR` with safe details only.
 
 ---
 
