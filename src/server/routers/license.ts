@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, orgMemberProcedure, mspTechProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, mspTechMutationProcedure } from '../trpc/init';
 import { writeAuditLog } from '@/lib/audit';
-import { pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
+import { createBusinessError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
 export const licenseRouter = router({
@@ -23,7 +22,7 @@ export const licenseRouter = router({
       });
       const subscriptionIds = subscriptions.map((s: any) => s.id);
 
-      const where: any = { subscriptionId: { in: subscriptionIds } };
+      const where: Record<string, unknown> = { subscriptionId: { in: subscriptionIds } };
       if (input.where?.subscriptionId) where.subscriptionId = input.where.subscriptionId;
       if (input.where?.hasPendingScaleDown === true) where.pendingQuantity = { not: null };
       if (input.where?.hasPendingScaleDown === false) where.pendingQuantity = null;
@@ -69,13 +68,17 @@ export const licenseRouter = router({
       });
 
       if (!license) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'License not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'License not found',
+          errorCode: 'LICENSE:QUANTITY:NOT_FOUND',
+        });
       }
 
       return license;
     }),
 
-  scaleUp: mspTechProcedure
+  scaleUp: mspTechMutationProcedure
     .input(z.object({
       licenseId: z.string().cuid(),
       newQuantity: z.number().int().positive(),
@@ -93,13 +96,23 @@ export const licenseRouter = router({
       });
 
       if (!license) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'License not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'License not found',
+          errorCode: 'LICENSE:QUANTITY:NOT_FOUND',
+        });
       }
 
       if (input.newQuantity <= license.quantity) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'New quantity must be greater than current quantity for scale-up',
+          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
+          recovery: {
+            action: 'NONE',
+            label: 'Adjust quantity',
+            params: { min: license.quantity + 1, max: license.productOffering?.maxQuantity, requested: input.newQuantity },
+          },
         });
       }
 
@@ -130,9 +143,10 @@ export const licenseRouter = router({
       const marginEarned = grossAmount.mul(marginPercent).div(100);
 
       if (!license.productOfferingId) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'PRECONDITION_FAILED',
           message: 'License has no associated product offering',
+          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
         });
       }
 
@@ -161,7 +175,7 @@ export const licenseRouter = router({
       return { license: updated, purchaseTransaction };
     }),
 
-  scaleDown: mspTechProcedure
+  scaleDown: mspTechMutationProcedure
     .input(z.object({
       licenseId: z.string().cuid(),
       newQuantity: z.number().int().min(0),
@@ -178,13 +192,23 @@ export const licenseRouter = router({
       });
 
       if (!license) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'License not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'License not found',
+          errorCode: 'LICENSE:QUANTITY:NOT_FOUND',
+        });
       }
 
       if (input.newQuantity >= license.quantity) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'New quantity must be less than current quantity for scale-down',
+          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
+          recovery: {
+            action: 'NONE',
+            label: 'Adjust quantity',
+            params: { min: 0, max: license.quantity - 1, requested: input.newQuantity },
+          },
         });
       }
 
@@ -259,7 +283,7 @@ export const licenseRouter = router({
       };
     }),
 
-  cancelPendingScaleDown: mspTechProcedure
+  cancelPendingScaleDown: mspTechMutationProcedure
     .input(z.object({
       licenseId: z.string().cuid(),
       idempotencyKey: z.string().uuid(),
@@ -274,13 +298,18 @@ export const licenseRouter = router({
       });
 
       if (!license) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'License not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'License not found',
+          errorCode: 'LICENSE:QUANTITY:NOT_FOUND',
+        });
       }
 
       if (license.pendingQuantity === null) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'No pending scale-down to cancel',
+          errorCode: 'LICENSE:SCALE_DOWN:NO_PENDING',
         });
       }
 

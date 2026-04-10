@@ -1,8 +1,17 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, orgMemberProcedure, orgOwnerProcedure, mspTechProcedure, mspAdminProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure } from '../trpc/init';
 import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
+import { createBusinessError } from '@/lib/errors';
+
+/**
+ * Explicit schema for Organization metadata — flat key-value pairs
+ * with primitive values only. No z.any() or z.unknown() per §3.
+ */
+const metadataSchema = z.record(
+  z.string(),
+  z.union([z.string(), z.number(), z.boolean(), z.null()]),
+);
 
 export const organizationRouter = router({
   get: orgMemberProcedure
@@ -14,18 +23,22 @@ export const organizationRouter = router({
       });
 
       if (!org) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Organization not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
       }
 
       return org;
     }),
 
-  update: orgOwnerProcedure
+  update: orgOwnerMutationProcedure
     .input(z.object({
       name: z.string().min(1).max(255).optional(),
       logo: z.string().url().optional(),
       billingType: z.nativeEnum(BillingType).optional(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: metadataSchema.optional(),
       idempotencyKey: z.string().uuid(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -35,7 +48,11 @@ export const organizationRouter = router({
       });
 
       if (!org) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Organization not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
       }
 
       const before = {
@@ -48,7 +65,7 @@ export const organizationRouter = router({
       const { idempotencyKey: _ikey, metadata, ...rest } = input;
       const updateData: Record<string, unknown> = { ...rest };
       if (metadata !== undefined) {
-        updateData.metadata = metadata as any;
+        updateData.metadata = metadata;
       }
       const updated = await prisma.organization.update({
         where: { id: ctx.organizationId! },
@@ -89,9 +106,10 @@ export const organizationRouter = router({
       });
 
       if (org?.organizationType !== 'MSP') {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'This action is only available for MSP organizations',
+          errorCode: 'AUTH:RBAC:MSP_DELEGATION_DENIED',
         });
       }
 
@@ -124,7 +142,7 @@ export const organizationRouter = router({
       };
     }),
 
-  createClient: mspAdminProcedure
+  createClient: mspAdminMutationProcedure
     .input(z.object({
       name: z.string().min(1).max(255),
       slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
@@ -141,9 +159,10 @@ export const organizationRouter = router({
       });
 
       if (org?.organizationType !== 'MSP') {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'Only MSP organizations can create client organizations',
+          errorCode: 'AUTH:RBAC:MSP_DELEGATION_DENIED',
         });
       }
 
@@ -152,9 +171,10 @@ export const organizationRouter = router({
         where: { slug: input.slug },
       });
       if (existingSlug) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'CONFLICT',
           message: 'An organization with this slug already exists',
+          errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS',
         });
       }
 

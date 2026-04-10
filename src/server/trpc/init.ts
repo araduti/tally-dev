@@ -151,7 +151,7 @@ function requireRole(...allowedRoles: Array<PlatformRole | MspRole | OrgRole>) {
  * Middleware: Idempotency key enforcement for mutations.
  * The idempotency key is extracted from the parsed input.
  */
-const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
+const idempotencyGuard = t.middleware(async ({ next, input }) => {
   const parsedInput = input as Record<string, unknown> | undefined;
   const idempotencyKey = parsedInput?.idempotencyKey as string | undefined;
 
@@ -182,7 +182,7 @@ const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
   return result;
 });
 
-// Composed procedure types
+// Composed procedure types — QUERIES (read-only, no idempotency)
 export const protectedProcedure = t.procedure.use(isAuthenticated).use(requireOrg);
 export const orgMemberProcedure = protectedProcedure;
 export const orgAdminProcedure = protectedProcedure.use(requireRole('ORG_ADMIN', 'ORG_OWNER', 'MSP_ADMIN', 'MSP_OWNER'));
@@ -190,9 +190,13 @@ export const orgOwnerProcedure = protectedProcedure.use(requireRole('ORG_OWNER',
 export const mspTechProcedure = protectedProcedure.use(requireRole('ORG_ADMIN', 'ORG_OWNER', 'MSP_TECHNICIAN', 'MSP_ADMIN', 'MSP_OWNER'));
 export const mspAdminProcedure = protectedProcedure.use(requireRole('MSP_ADMIN', 'MSP_OWNER'));
 export const mspOwnerProcedure = protectedProcedure.use(requireRole('MSP_OWNER'));
-export const mutationProcedure = protectedProcedure.use(idempotencyGuard);
-export const adminMutationProcedure = orgOwnerProcedure.use(idempotencyGuard);
-export const mspMutationProcedure = mspAdminProcedure.use(idempotencyGuard);
+
+// Composed procedure types — MUTATIONS (idempotency-guarded)
+// Every mutation must use one of these, never a query-only procedure.
+export const orgAdminMutationProcedure = orgAdminProcedure.use(idempotencyGuard);
+export const orgOwnerMutationProcedure = orgOwnerProcedure.use(idempotencyGuard);
+export const mspTechMutationProcedure = mspTechProcedure.use(idempotencyGuard);
+export const mspAdminMutationProcedure = mspAdminProcedure.use(idempotencyGuard);
 
 // Helper
 function parseCookie(cookieHeader: string, name: string): string | undefined {

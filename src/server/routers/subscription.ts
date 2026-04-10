@@ -1,9 +1,8 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { SubscriptionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { dpaNotAcceptedError, provisioningDisabledError } from '@/lib/errors';
+import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
 export const subscriptionRouter = router({
@@ -17,7 +16,7 @@ export const subscriptionRouter = router({
       }).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.status) where.status = input.where.status;
       if (input.where?.bundleId) where.bundleId = input.where.bundleId;
 
@@ -58,13 +57,17 @@ export const subscriptionRouter = router({
       });
 
       if (!subscription) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Subscription not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Subscription not found',
+          errorCode: 'SUBSCRIPTION:LIFECYCLE:NOT_FOUND',
+        });
       }
 
       return subscription;
     }),
 
-  create: orgAdminProcedure
+  create: orgAdminMutationProcedure
     .input(z.object({
       productOfferingId: z.string().cuid(),
       quantity: z.number().int().positive(),
@@ -97,22 +100,49 @@ export const subscriptionRouter = router({
         include: { bundle: true },
       });
       if (!offering) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Product offering not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Product offering not found',
+          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
+        });
       }
       if (!offering.effectiveUnitCost) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'PRECONDITION_FAILED',
           message: 'Product offering price not available',
-          cause: { errorCode: 'CATALOG:OFFERING:PRICE_MISSING' },
+          errorCode: 'CATALOG:OFFERING:PRICE_MISSING',
+          recovery: {
+            action: 'FORCE_SYNC',
+            label: 'Sync Catalog',
+            params: {},
+          },
         });
       }
 
       // Check quantity bounds
       if (offering.minQuantity && input.quantity < offering.minQuantity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quantity below minimum' });
+        throw createBusinessError({
+          code: 'BAD_REQUEST',
+          message: 'Requested quantity is below the minimum allowed',
+          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
+          recovery: {
+            action: 'NONE',
+            label: 'Adjust quantity',
+            params: { min: offering.minQuantity, max: offering.maxQuantity, requested: input.quantity },
+          },
+        });
       }
       if (offering.maxQuantity && input.quantity > offering.maxQuantity) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Quantity above maximum' });
+        throw createBusinessError({
+          code: 'BAD_REQUEST',
+          message: 'Requested quantity exceeds the maximum allowed',
+          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
+          recovery: {
+            action: 'NONE',
+            label: 'Adjust quantity',
+            params: { min: offering.minQuantity, max: offering.maxQuantity, requested: input.quantity },
+          },
+        });
       }
 
       const unitCost = new Decimal(offering.effectiveUnitCost.toString());
@@ -127,9 +157,15 @@ export const subscriptionRouter = router({
         where: { vendorType: offering.sourceType },
       });
       if (!vendorConnection) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'PRECONDITION_FAILED',
           message: 'No active vendor connection for this distributor',
+          errorCode: 'VENDOR:AUTH:DISCONNECTED',
+          recovery: {
+            action: 'REAUTH_VENDOR',
+            label: 'Connect Vendor',
+            params: { vendorType: offering.sourceType },
+          },
         });
       }
 
@@ -177,7 +213,7 @@ export const subscriptionRouter = router({
       return { subscription, license, purchaseTransaction };
     }),
 
-  cancel: orgAdminProcedure
+  cancel: orgAdminMutationProcedure
     .input(z.object({
       subscriptionId: z.string().cuid(),
       idempotencyKey: z.string().uuid(),
@@ -188,7 +224,11 @@ export const subscriptionRouter = router({
       });
 
       if (!subscription) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Subscription not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Subscription not found',
+          errorCode: 'SUBSCRIPTION:LIFECYCLE:NOT_FOUND',
+        });
       }
 
       const now = new Date();

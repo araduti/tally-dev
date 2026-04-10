@@ -1,39 +1,50 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, mspTechProcedure, orgOwnerProcedure, orgAdminProcedure } from '../trpc/init';
+import { router, mspTechProcedure, orgOwnerMutationProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { VendorType, VendorConnectionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { encrypt } from '@/lib/encryption';
-import { dpaNotAcceptedError } from '@/lib/errors';
+import { createBusinessError, dpaNotAcceptedError } from '@/lib/errors';
 
 export const vendorRouter = router({
   listConnections: mspTechProcedure
     .input(z.object({
+      cursor: z.string().cuid().optional(),
+      limit: z.number().int().min(1).max(100).default(25),
       where: z.object({
         vendorType: z.nativeEnum(VendorType).optional(),
         status: z.nativeEnum(VendorConnectionStatus).optional(),
       }).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.vendorType) where.vendorType = input.where.vendorType;
       if (input.where?.status) where.status = input.where.status;
 
       const items = await ctx.db.vendorConnection.findMany({
+        take: input.limit + 1,
+        cursor: input.cursor ? { id: input.cursor } : undefined,
         where,
+        orderBy: { createdAt: 'desc' },
         select: {
           id: true,
           vendorType: true,
           status: true,
           lastSyncAt: true,
+          createdAt: true,
           // credentials are NEVER included
         },
       });
 
-      return { items };
+      const hasMore = items.length > input.limit;
+      if (hasMore) items.pop();
+
+      return {
+        items,
+        nextCursor: hasMore ? items[items.length - 1]?.id ?? null : null,
+      };
     }),
 
-  connect: orgOwnerProcedure
+  connect: orgOwnerMutationProcedure
     .input(z.object({
       vendorType: z.nativeEnum(VendorType),
       credentials: z.string().min(1),
@@ -54,9 +65,10 @@ export const vendorRouter = router({
         where: { vendorType: input.vendorType },
       });
       if (existing && existing.status !== 'DISCONNECTED') {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'CONFLICT',
           message: `An active ${input.vendorType} connection already exists`,
+          errorCode: 'VENDOR:AUTH:DUPLICATE',
         });
       }
 
@@ -88,7 +100,7 @@ export const vendorRouter = router({
       return { vendorConnection };
     }),
 
-  disconnect: orgOwnerProcedure
+  disconnect: orgOwnerMutationProcedure
     .input(z.object({
       vendorConnectionId: z.string().cuid(),
       idempotencyKey: z.string().uuid(),
@@ -99,7 +111,11 @@ export const vendorRouter = router({
       });
 
       if (!connection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor connection not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Vendor connection not found',
+          errorCode: 'VENDOR:AUTH:NOT_FOUND',
+        });
       }
 
       // Overwrite credentials and set status to DISCONNECTED
@@ -126,7 +142,7 @@ export const vendorRouter = router({
       return { vendorConnection: updated };
     }),
 
-  syncCatalog: orgAdminProcedure
+  syncCatalog: orgAdminMutationProcedure
     .input(z.object({
       vendorConnectionId: z.string().cuid(),
       idempotencyKey: z.string().uuid(),
@@ -137,14 +153,23 @@ export const vendorRouter = router({
       });
 
       if (!connection) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor connection not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Vendor connection not found',
+          errorCode: 'VENDOR:AUTH:NOT_FOUND',
+        });
       }
 
       if (connection.status === 'DISCONNECTED') {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'PRECONDITION_FAILED',
           message: 'Cannot sync a disconnected vendor connection',
-          cause: { errorCode: 'VENDOR:AUTH:DISCONNECTED' },
+          errorCode: 'VENDOR:AUTH:DISCONNECTED',
+          recovery: {
+            action: 'REAUTH_VENDOR',
+            label: 'Reconnect Vendor',
+            params: { vendorType: connection.vendorType, vendorConnectionId: connection.id },
+          },
         });
       }
 

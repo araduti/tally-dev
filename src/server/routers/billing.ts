@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
 import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
 import { TransactionStatus } from '@prisma/client';
+import { createBusinessError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
 export const billingRouter = router({
@@ -18,7 +18,7 @@ export const billingRouter = router({
       }).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.status) where.status = input.where.status;
 
       const orderBy = input.orderBy
@@ -53,7 +53,7 @@ export const billingRouter = router({
       periodEnd: z.date().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.subscriptionId) where.subscriptionId = input.subscriptionId;
       if (input.periodStart) where.periodStart = { gte: input.periodStart };
       if (input.periodEnd) where.periodEnd = { lte: input.periodEnd };
@@ -64,7 +64,11 @@ export const billingRouter = router({
       });
 
       if (!snapshot) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'No billing snapshot found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'No billing snapshot found for the specified period',
+          errorCode: 'BILLING:SNAPSHOT:NOT_FOUND',
+        });
       }
 
       return snapshot;

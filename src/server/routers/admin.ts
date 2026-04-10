@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { TRPCError } from '@trpc/server';
-import { router, orgOwnerProcedure } from '../trpc/init';
+import { router, orgOwnerProcedure, orgOwnerMutationProcedure } from '../trpc/init';
 import { OrgRole, MspRole } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
+import { createBusinessError } from '@/lib/errors';
 
 export const adminRouter = router({
   listMembers: orgOwnerProcedure
@@ -35,7 +35,7 @@ export const adminRouter = router({
       };
     }),
 
-  inviteMember: orgOwnerProcedure
+  inviteMember: orgOwnerMutationProcedure
     .input(z.object({
       email: z.string().email(),
       orgRole: z.nativeEnum(OrgRole).optional(),
@@ -45,9 +45,10 @@ export const adminRouter = router({
     .mutation(async ({ ctx, input }) => {
       // Validate that exactly one role is provided
       if ((!input.orgRole && !input.mspRole) || (input.orgRole && input.mspRole)) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'BAD_REQUEST',
           message: 'Exactly one of orgRole or mspRole must be provided',
+          errorCode: 'ADMIN:MEMBER:INVALID_ROLE',
         });
       }
 
@@ -62,10 +63,10 @@ export const adminRouter = router({
           where: { userId: existingUser.id },
         });
         if (existingMember) {
-          throw new TRPCError({
+          throw createBusinessError({
             code: 'CONFLICT',
             message: 'User is already a member of this organization',
-            cause: { errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS' },
+            errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS',
           });
         }
       }
@@ -75,10 +76,10 @@ export const adminRouter = router({
         where: { email: input.email, status: 'PENDING' },
       });
       if (existingInvitation) {
-        throw new TRPCError({
+        throw createBusinessError({
           code: 'CONFLICT',
           message: 'An invitation is already pending for this email',
-          cause: { errorCode: 'ADMIN:INVITATION:ALREADY_PENDING' },
+          errorCode: 'ADMIN:INVITATION:ALREADY_PENDING',
         });
       }
 
@@ -116,7 +117,7 @@ export const adminRouter = router({
       };
     }),
 
-  updateRole: orgOwnerProcedure
+  updateRole: orgOwnerMutationProcedure
     .input(z.object({
       memberId: z.string().cuid(),
       orgRole: z.nativeEnum(OrgRole).optional(),
@@ -129,7 +130,11 @@ export const adminRouter = router({
       });
 
       if (!member) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Member not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Member not found',
+          errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
       }
 
       const before = { orgRole: member.orgRole, mspRole: member.mspRole };
@@ -162,7 +167,7 @@ export const adminRouter = router({
       };
     }),
 
-  removeMember: orgOwnerProcedure
+  removeMember: orgOwnerMutationProcedure
     .input(z.object({
       memberId: z.string().cuid(),
       idempotencyKey: z.string().uuid(),
@@ -173,7 +178,11 @@ export const adminRouter = router({
       });
 
       if (!member) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Member not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Member not found',
+          errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
       }
 
       await ctx.db.member.delete({
@@ -198,7 +207,7 @@ export const adminRouter = router({
       cursor: z.string().cuid().optional(),
       limit: z.number().int().min(1).max(100).default(25),
       where: z.object({
-        action: z.string().optional(),
+        action: z.string().min(1).optional(),
         entityId: z.string().cuid().optional(),
         userId: z.string().cuid().optional(),
       }).optional(),
@@ -208,7 +217,7 @@ export const adminRouter = router({
       }).optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.action) where.action = { contains: input.where.action };
       if (input.where?.entityId) where.entityId = input.where.entityId;
       if (input.where?.userId) where.userId = input.where.userId;

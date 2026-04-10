@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
+import { createBusinessError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 import { VendorType } from '@prisma/client';
 
@@ -9,8 +10,8 @@ export const catalogRouter = router({
       cursor: z.string().cuid().optional(),
       limit: z.number().int().min(1).max(100).default(25),
       where: z.object({
-        category: z.string().optional(),
-        name: z.string().optional(),
+        category: z.string().min(1).optional(),
+        name: z.string().min(1).optional(),
       }).optional(),
       orderBy: z.object({
         field: z.enum(['name', 'createdAt']),
@@ -18,7 +19,7 @@ export const catalogRouter = router({
       }).optional(),
     }))
     .query(async ({ input }) => {
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.category) where.category = input.where.category;
       if (input.where?.name) where.name = { contains: input.where.name, mode: 'insensitive' };
 
@@ -62,8 +63,11 @@ export const catalogRouter = router({
       });
 
       if (!bundle) {
-        const { TRPCError } = await import('@trpc/server');
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Bundle not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Bundle not found',
+          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
+        });
       }
 
       return bundle;
@@ -76,12 +80,12 @@ export const catalogRouter = router({
       where: z.object({
         bundleId: z.string().cuid().optional(),
         sourceType: z.nativeEnum(VendorType).optional(),
-        availability: z.string().optional(),
+        availability: z.string().min(1).optional(),
       }).optional(),
     }))
     .query(async ({ input }) => {
       const { prisma } = await import('@/lib/db');
-      const where: any = {};
+      const where: Record<string, unknown> = {};
       if (input.where?.bundleId) where.bundleId = input.where.bundleId;
       if (input.where?.sourceType) where.sourceType = input.where.sourceType;
       if (input.where?.availability) where.availability = input.where.availability;
@@ -115,13 +119,16 @@ export const catalogRouter = router({
       });
 
       if (!bundle) {
-        const { TRPCError } = await import('@trpc/server');
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Bundle not found' });
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Bundle not found',
+          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
+        });
       }
 
       const options = bundle.offerings
-        .filter((o) => o.effectiveUnitCost !== null)
-        .map((o) => {
+        .filter((o: any) => o.effectiveUnitCost !== null)
+        .map((o: any) => {
           const unitCost = new Decimal(o.effectiveUnitCost!.toString());
           const totalCost = unitCost.mul(input.quantity);
           const isEligible =
@@ -141,7 +148,7 @@ export const catalogRouter = router({
             isEligible,
           };
         })
-        .sort((a, b) => new Decimal(a.totalCost).cmp(new Decimal(b.totalCost)));
+        .sort((a: any, b: any) => new Decimal(a.totalCost).cmp(new Decimal(b.totalCost)));
 
       return {
         bundleId: bundle.id,

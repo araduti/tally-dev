@@ -1,4 +1,3 @@
-import type { PrismaClient } from '@prisma/client';
 import type { OrgRole, MspRole, PlatformRole } from '@prisma/client';
 
 export interface EffectiveRole {
@@ -12,7 +11,6 @@ export interface EffectiveRole {
  * We use a looser type to avoid TypeScript errors when the proxy adds fields
  * that Prisma types require but the caller doesn't need to supply.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RLSPrismaProxy = any;
 
 export interface TRPCContext {
