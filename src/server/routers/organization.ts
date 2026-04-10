@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, orgMemberProcedure, orgOwnerProcedure, mspTechProcedure, mspAdminProcedure } from '../trpc/init';
-import { BillingType, OrganizationType } from '@prisma/client';
+import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 
 export const organizationRouter = router({
@@ -45,7 +45,11 @@ export const organizationRouter = router({
         metadata: org.metadata,
       };
 
-      const { idempotencyKey, ...updateData } = input;
+      const { idempotencyKey: _ikey, metadata, ...rest } = input;
+      const updateData: Record<string, unknown> = { ...rest };
+      if (metadata !== undefined) {
+        updateData.metadata = metadata as any;
+      }
       const updated = await prisma.organization.update({
         where: { id: ctx.organizationId! },
         data: updateData,

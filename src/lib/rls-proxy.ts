@@ -9,26 +9,6 @@ import { prisma } from './db';
  * Models without an organizationId field (User, Product, Bundle, BundleProduct,
  * Verification, Account) pass through unmodified.
  */
-const ORG_SCOPED_MODELS = new Set([
-  'organization',
-  'session',
-  'member',
-  'invitation',
-  'dpaAcceptance',
-  'vendorConnection',
-  'subscription',
-  'license',
-  'purchaseTransaction',
-  'billingSnapshot',
-  'auditLog',
-  'productOffering',
-]);
-
-// Models that are org-scoped indirectly (through relations) but don't have organizationId directly
-const INDIRECT_ORG_MODELS = new Set([
-  'license',       // scoped via subscription.organizationId
-  'productOffering', // may or may not be org-scoped
-]);
 
 // Models that have organizationId as a direct field
 const DIRECT_ORG_MODELS = new Set([

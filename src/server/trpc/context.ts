@@ -1,4 +1,3 @@
-import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { PrismaClient } from '@prisma/client';
 import type { OrgRole, MspRole, PlatformRole } from '@prisma/client';
 
@@ -8,21 +7,29 @@ export interface EffectiveRole {
   orgRole: OrgRole | null;
 }
 
+/**
+ * The RLS proxy automatically injects organizationId into all queries/mutations.
+ * We use a looser type to avoid TypeScript errors when the proxy adds fields
+ * that Prisma types require but the caller doesn't need to supply.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type RLSPrismaProxy = any;
+
 export interface TRPCContext {
   // Set after authentication
   userId: string | null;
   organizationId: string | null;
   effectiveRole: EffectiveRole;
 
-  // The org-scoped database proxy
-  db: PrismaClient;
+  // The org-scoped database proxy — auto-injects organizationId
+  db: RLSPrismaProxy;
 
   // Request metadata
   traceId: string;
   headers: Headers;
 }
 
-export function createContext(opts: FetchCreateContextFnOptions): TRPCContext {
+export function createContext(opts: { req: Request; resHeaders: Headers }): TRPCContext {
   // Base context — authentication is handled by the proxy middleware
   return {
     userId: null,
@@ -32,7 +39,7 @@ export function createContext(opts: FetchCreateContextFnOptions): TRPCContext {
       mspRole: null,
       orgRole: null,
     },
-    db: null as unknown as PrismaClient, // Set by auth middleware
+    db: null, // Set by auth middleware
     traceId: crypto.randomUUID(),
     headers: opts.req.headers,
   };

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { router, orgMemberProcedure, orgAdminProcedure, mspTechProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
 import { TransactionStatus } from '@prisma/client';
 import Decimal from 'decimal.js';
 
@@ -76,7 +76,6 @@ export const billingRouter = router({
       periodEnd: z.date().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const { prisma } = await import('@/lib/db');
       const now = new Date();
       const periodStart = input.periodStart ?? new Date(now.getFullYear(), now.getMonth(), 1);
       const periodEnd = input.periodEnd ?? new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -92,8 +91,8 @@ export const billingRouter = router({
       });
 
       let totalProjected = new Decimal(0);
-      const lineItems = subscriptions.flatMap((sub) =>
-        sub.licenses.map((lic) => {
+      const lineItems = subscriptions.flatMap((sub: any) =>
+        sub.licenses.map((lic: any) => {
           const unitCost = lic.productOffering?.effectiveUnitCost
             ? new Decimal(lic.productOffering.effectiveUnitCost.toString())
             : new Decimal(0);

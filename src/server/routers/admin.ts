@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { router, orgOwnerProcedure } from '../trpc/init';
-import { OrgRole, MspRole, InvitationStatus } from '@prisma/client';
+import { OrgRole, MspRole } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 
 export const adminRouter = router({
@@ -24,7 +24,7 @@ export const adminRouter = router({
       if (hasMore) items.pop();
 
       return {
-        items: items.map((m) => ({
+        items: items.map((m: any) => ({
           id: m.id,
           user: m.user,
           orgRole: m.orgRole,
@@ -231,7 +231,7 @@ export const adminRouter = router({
       if (hasMore) items.pop();
 
       return {
-        items: items.map((log) => ({
+        items: items.map((log: any) => ({
           id: log.id,
           action: log.action,
           entityId: log.entityId,

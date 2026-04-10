@@ -17,8 +17,7 @@ export const catalogRouter = router({
         direction: z.enum(['asc', 'desc']).default('desc'),
       }).optional(),
     }))
-    .query(async ({ ctx, input }) => {
-      const { db } = ctx;
+    .query(async ({ input }) => {
       const where: any = {};
       if (input.where?.category) where.category = input.where.category;
       if (input.where?.name) where.name = { contains: input.where.name, mode: 'insensitive' };

@@ -21,7 +21,7 @@ export const licenseRouter = router({
       const subscriptions = await ctx.db.subscription.findMany({
         select: { id: true },
       });
-      const subscriptionIds = subscriptions.map((s) => s.id);
+      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
       const where: any = { subscriptionId: { in: subscriptionIds } };
       if (input.where?.subscriptionId) where.subscriptionId = input.where.subscriptionId;
@@ -58,7 +58,7 @@ export const licenseRouter = router({
       const subscriptions = await ctx.db.subscription.findMany({
         select: { id: true },
       });
-      const subscriptionIds = subscriptions.map((s) => s.id);
+      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
       const license = await prisma.license.findFirst({
         where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
@@ -85,7 +85,7 @@ export const licenseRouter = router({
       const { prisma } = await import('@/lib/db');
       // Verify org scope
       const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s) => s.id);
+      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
       const license = await prisma.license.findFirst({
         where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
@@ -170,7 +170,7 @@ export const licenseRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
       const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s) => s.id);
+      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
       const license = await prisma.license.findFirst({
         where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
@@ -267,7 +267,7 @@ export const licenseRouter = router({
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
       const subscriptions = await ctx.db.subscription.findMany({ select: { id: true } });
-      const subscriptionIds = subscriptions.map((s) => s.id);
+      const subscriptionIds = subscriptions.map((s: any) => s.id);
 
       const license = await prisma.license.findFirst({
         where: { id: input.licenseId, subscriptionId: { in: subscriptionIds } },
