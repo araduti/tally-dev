@@ -6,7 +6,7 @@ import type {
 } from './types';
 import { VendorError } from './types';
 
-const INGRAM_API_BASE = 'https://api.ingrammicro.com/sandbox/resellers/v6';
+const INGRAM_API_BASE = process.env.INGRAM_API_BASE ?? 'https://api.ingrammicro.com/resellers/v6';
 const INGRAM_TOKEN_URL = 'https://api.ingrammicro.com/oauth/access_token';
 
 // ---------------------------------------------------------------------------
