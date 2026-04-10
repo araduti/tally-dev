@@ -129,6 +129,21 @@ export function quantityOutOfRangeError(min: number | null, max: number | null, 
   });
 }
 
+// ── AUTH — Rate Limiting ──
+
+export function rateLimitExceededError(retryAfterSeconds: number): TRPCError {
+  return createBusinessError({
+    code: 'TOO_MANY_REQUESTS',
+    message: 'Rate limit exceeded — please slow down',
+    errorCode: 'AUTH:RATE_LIMIT:EXCEEDED',
+    recovery: {
+      action: 'NONE',
+      label: 'Retry later',
+      params: { retryAfterSeconds },
+    },
+  });
+}
+
 // ── VENDOR — Distributor Connections & APIs ──
 
 export function vendorAuthExpiredError(vendorType: string, vendorConnectionId: string): TRPCError {
