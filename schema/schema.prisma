@@ -1,7 +1,7 @@
 // =============================================================
 // Tally — Prisma Schema
 // Updated: April 10, 2026
-// Reviewed against ARCHITECTURE.md v2.2
+// Reviewed against ARCHITECTURE.md v2.3
 // =============================================================
 
 generator client {
@@ -57,6 +57,31 @@ enum TransactionStatus {
   REFUNDED
 }
 
+// --- RBAC Enums (Three-Tier Role Model) ---
+
+enum OrganizationType {
+  MSP      // Managed Service Provider — manages child CLIENT orgs
+  CLIENT   // Managed by an MSP parent — has parentOrganizationId
+  DIRECT   // Standalone org with no MSP hierarchy
+}
+
+enum PlatformRole {
+  SUPER_ADMIN  // Full access across all orgs (Tally staff)
+  SUPPORT      // Read-only access across all orgs (Tally staff)
+}
+
+enum MspRole {
+  MSP_OWNER      // Full control of the MSP org and all its client orgs
+  MSP_ADMIN      // Manage client orgs, billing, and provisioning
+  MSP_TECHNICIAN // Operate within assigned client orgs (read + provision)
+}
+
+enum OrgRole {
+  ORG_OWNER  // Full control — typically the customer admin
+  ORG_ADMIN  // Manage subscriptions and licenses
+  ORG_MEMBER // Read-only / limited actions
+}
+
 // =============================================================
 // 1. BETTER-AUTH CORE (Identity & Sessions)
 // =============================================================
@@ -69,6 +94,10 @@ model User {
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  // Tally staff only. Null for all regular users.
+  // Checked first in the RLS access resolution chain.
+  platformRole  PlatformRole?
 
   sessions      Session[]
   accounts      Account[]
@@ -141,6 +170,16 @@ model Organization {
   createdAt   DateTime @default(now())
   metadata    Json?
 
+  // --- Organization Hierarchy ---
+  // Determines RBAC model: MSP members get MspRole, CLIENT/DIRECT get OrgRole
+  organizationType OrganizationType @default(DIRECT)
+
+  // Set only for CLIENT orgs — points to the managing MSP org.
+  // MSP staff access child orgs via this relation (delegated access).
+  parentOrganizationId String?
+  parentOrganization   Organization?  @relation("OrgHierarchy", fields: [parentOrganizationId], references: [id], onDelete: SetNull)
+  clientOrganizations  Organization[] @relation("OrgHierarchy")
+
   // --- Enterprise Gates ---
   provisioningEnabled Boolean     @default(false)
   isContractSigned    Boolean     @default(false)
@@ -166,7 +205,13 @@ model Member {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String
   user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role           String
+
+  // Exactly one of these must be set, determined by Organization.organizationType:
+  //   MSP org         → set mspRole, leave orgRole null
+  //   CLIENT/DIRECT   → set orgRole, leave mspRole null
+  orgRole  OrgRole?
+  mspRole  MspRole?
+
   createdAt      DateTime     @default(now())
 
   @@unique([organizationId, userId])
