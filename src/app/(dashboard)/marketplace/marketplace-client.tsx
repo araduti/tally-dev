@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { api } from '@/trpc/client';
 
 // ---------- Serialized types ----------
@@ -54,14 +54,20 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [compareBundle, setCompareBundle] = useState<SerializedBundle | null>(null);
   const [compareQuantity, setCompareQuantity] = useState(1);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounced search handler
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
-    // Simple debounce using setTimeout
-    const timer = setTimeout(() => setDebouncedSearch(value), 300);
-    return () => clearTimeout(timer);
-  };
+  // Debounce search term with proper cleanup
+  useEffect(() => {
+    debounceTimerRef.current = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 300);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [searchTerm]);
 
   // Client-side query with search filter
   const { data: bundlesData, isLoading: bundlesLoading } = api.catalog.listBundles.useQuery(
@@ -123,7 +129,7 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
             type="search"
             placeholder="Search bundles (e.g., Microsoft 365 E3)..."
             value={searchTerm}
-            onChange={(e) => handleSearchChange(e.target.value)}
+            onChange={(e) => setSearchTerm(e.target.value)}
             className="flex-1 px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             aria-label="Search bundles"
           />
