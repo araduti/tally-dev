@@ -1,6 +1,65 @@
-// ---------------------------------------------------------
+// =============================================================
+// Tally — Prisma Schema
+// Updated: April 10, 2026
+// Reviewed against ARCHITECTURE.md v2.2
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================
+// ENUMS
+// Replacing all string-literal union fields with type-safe enums
+// =============================================================
+
+enum BillingType {
+  DIRECT_STRIPE
+  MANUAL_INVOICE
+}
+
+enum VendorType {
+  PAX8
+  INGRAM
+  TDSYNNEX
+  DIRECT
+}
+
+enum VendorConnectionStatus {
+  PENDING
+  ACTIVE
+  ERROR
+  DISCONNECTED
+}
+
+enum UnitType {
+  SEAT
+  DEVICE
+  UNIT
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// =============================================================
 // 1. BETTER-AUTH CORE (Identity & Sessions)
-// ---------------------------------------------------------
+// =============================================================
 
 model User {
   id            String    @id @default(cuid())
@@ -13,8 +72,9 @@ model User {
 
   sessions      Session[]
   accounts      Account[]
-  members       Member[]      // Relationship to Organizations
+  members       Member[]
   auditLogs     AuditLog[]
+  dpaAcceptances DpaAcceptance[]
 
   @@map("user")
 }
@@ -27,16 +87,20 @@ model Session {
   updatedAt DateTime
   ipAddress String?
   userAgent String?
+
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  activeOrganizationId String? // Tracks which tenant the user is currently "in"
+  // Zero-trust active tenant — scopes all RLS queries for this session.
+  // Must be set before any tRPC mutation is permitted.
+  activeOrganizationId String?
+  activeOrganization   Organization? @relation(fields: [activeOrganizationId], references: [id], onDelete: SetNull)
 
   @@map("session")
 }
 
 model Account {
-  id                    String    @id
+  id                    String    @id @default(cuid())
   accountId             String
   providerId            String
   userId                String
@@ -48,26 +112,26 @@ model Account {
   refreshTokenExpiresAt DateTime?
   scope                 String?
   password              String?
-  createdAt             DateTime
-  updatedAt             DateTime
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
 
   @@map("account")
 }
 
 model Verification {
-  id         String    @id
+  id         String   @id @default(cuid())
   identifier String
   value      String
   expiresAt  DateTime
-  createdAt  DateTime?
-  updatedAt  DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@map("verification")
 }
 
-// ---------------------------------------------------------
+// =============================================================
 // 2. BETTER-AUTH ORGANIZATION PLUGIN (The "Customer" Hub)
-// ---------------------------------------------------------
+// =============================================================
 
 model Organization {
   id          String   @id @default(cuid())
@@ -75,96 +139,330 @@ model Organization {
   slug        String   @unique
   logo        String?
   createdAt   DateTime @default(now())
-  metadata    Json?    // For custom Tally data like BillingMode, TaxID, etc.
+  metadata    Json?
 
-  // Tally Enterprise Gates (Stored in metadata or explicit fields)
-  provisioningEnabled Boolean @default(false)
-  isContractSigned    Boolean @default(false)
+  // --- Enterprise Gates ---
+  provisioningEnabled Boolean     @default(false)
+  isContractSigned    Boolean     @default(false)
+  billingType         BillingType @default(DIRECT_STRIPE)
 
-  members           Member[]
-  invitations       Invitation[]
-  vendorConnections VendorConnection[]
-  subscriptions     Subscription[]
-  auditLogs         AuditLog[]
+  // --- Relations ---
+  members              Member[]
+  invitations          Invitation[]
+  sessions             Session[]             // active sessions scoped to this org
+  vendorConnections    VendorConnection[]
+  subscriptions        Subscription[]
+  purchaseTransactions PurchaseTransaction[]
+  auditLogs            AuditLog[]
+  billingSnapshots     BillingSnapshot[]
+  dpaAcceptances       DpaAcceptance[]
 
   @@map("organization")
 }
 
 model Member {
-  id             String   @id @default(cuid())
-  role           String   // Better-Auth default: "owner", "admin", "member"
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   userId         String
-  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt      DateTime @default(now())
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String
+  createdAt      DateTime     @default(now())
 
+  @@unique([organizationId, userId])
   @@map("member")
 }
 
 model Invitation {
-  id             String   @id
-  email          String
-  role           String?
-  status         String   // "pending", "accepted", "rejected"
-  expiresAt      DateTime
-  inviterId      String
+  id             String       @id @default(cuid())
   organizationId String
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email          String
+  role           String?
+  status         String       @default("PENDING")
+  expiresAt      DateTime
+  inviterId      String
 
   @@map("invitation")
 }
 
-// ---------------------------------------------------------
-// 3. TALLY BUSINESS LOGIC (Linked to Organization)
-// ---------------------------------------------------------
+// =============================================================
+// 3. COMPLIANCE — DPA Gate
+// Tracks per-org Data Processing Agreement acceptance.
+// Must be verified before any vendor provisioning flow begins.
+// =============================================================
 
-model VendorConnection {
-  id                String       @id @default(cuid())
-  organizationId    String
-  organization      Organization @relation(fields: [organizationId], references: [id])
-  vendorType        String       // "PAX8", "MICROSOFT_GRAPH", etc.
-  status            String       @default("PENDING")
-  lastSyncAt        DateTime?
-  credentials       Json         // Encrypted API keys/tokens
-  
-  subscriptions     Subscription[]
+model DpaAcceptance {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
 
-  @@unique([organizationId, vendorType])
+  // The user who clicked "I accept" on behalf of the organization
+  acceptedByUserId String
+  acceptedBy       User     @relation(fields: [acceptedByUserId], references: [id])
+
+  // Version of the DPA document accepted (e.g., "2024-01")
+  version    String
+  acceptedAt DateTime @default(now())
+
+  @@map("dpa_acceptances")
 }
 
+// =============================================================
+// 4. VENDOR CONNECTIONS
+// =============================================================
+
+model VendorConnection {
+  id             String                 @id @default(cuid())
+  organizationId String
+  organization   Organization           @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  vendorType VendorType
+  status     VendorConnectionStatus @default(PENDING)
+  lastSyncAt DateTime?
+
+  // AES-256-GCM ciphertext. NEVER store plaintext here.
+  // Decrypted only within the vendor adapter at call time.
+  credentials String
+
+  subscriptions    Subscription[]
+  productOfferings ProductOffering[]
+
+  @@unique([organizationId, vendorType])
+  @@map("vendor_connections")
+}
+
+// =============================================================
+// 5. CANONICAL CATALOG LAYER (Product → Bundle → ProductOffering)
+//
+// Three-tier hierarchy:
+//   Product       — Atomic service (e.g., Exchange Online)
+//   Bundle        — Commercial SKU (e.g., M365 E3)
+//   ProductOffering — Distributor-specific price point
+// =============================================================
+
+model Product {
+  id            String   @id @default(cuid())
+  canonicalSku  String   @unique
+  name          String
+  friendlyName  String
+  description   String?
+  category      String?
+  unitType      UnitType
+  manufacturer  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Products belong to Bundles via a join table
+  bundleProducts BundleProduct[]
+
+  @@map("products")
+}
+
+// Bundle represents a commercial SKU composed of one or more Products.
+// e.g., "Microsoft 365 E3" = Exchange Online + Teams + SharePoint + ...
+model Bundle {
+  id           String  @id @default(cuid())
+  globalSkuId  String  @unique  // Canonical SKU for cross-distributor matching
+  name         String
+  friendlyName String
+  description  String?
+  category     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  products      BundleProduct[]
+  offerings     ProductOffering[]
+  subscriptions Subscription[]
+
+  @@map("bundles")
+}
+
+// Join table: a Bundle contains many Products; a Product may appear in many Bundles
+model BundleProduct {
+  bundleId  String
+  bundle    Bundle  @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([bundleId, productId])
+  @@map("bundle_products")
+}
+
+// Distributor-specific price point for a Bundle.
+// One Bundle → many ProductOfferings (one per distributor).
+model ProductOffering {
+  id       String @id @default(cuid())
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  vendorConnectionId String?
+  vendorConnection   VendorConnection? @relation(fields: [vendorConnectionId], references: [id])
+
+  sourceType   VendorType
+  externalSku  String
+
+  // Nullable: cost may not yet be fetched. Do not provision until populated.
+  effectiveUnitCost    Decimal?
+  partnerMarginPercent Decimal?
+  currency             String   @default("USD")
+
+  availability String?
+  leadTimeDays Int?
+  minQuantity  Int?
+  maxQuantity  Int?
+
+  metadata Json @default("{}")
+
+  lastPricingFetchedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Back-relations
+  licenses             License[]
+  purchaseTransactions PurchaseTransaction[]
+
+  @@unique([bundleId, sourceType, externalSku])
+  @@map("product_offerings")
+}
+
+// =============================================================
+// 6. SUBSCRIPTIONS & LICENSE LIFECYCLE
+// =============================================================
+
 model Subscription {
-  id                  String           @id @default(cuid())
-  organizationId      String
-  organization        Organization     @relation(fields: [organizationId], references: [id])
-  vendorConnectionId  String
-  vendorConnection    VendorConnection @relation(fields: [vendorConnectionId], references: [id])
-  
-  externalId          String           @unique
-  status              String
-  commitmentEndDate   DateTime
-  
-  licenses            License[]
-  createdAt           DateTime         @default(now())
+  id             String             @id @default(cuid())
+  organizationId String
+  organization   Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  vendorConnectionId String
+  vendorConnection   VendorConnection @relation(fields: [vendorConnectionId], references: [id])
+
+  // The commercial Bundle this subscription fulfils
+  bundleId String
+  bundle   Bundle @relation(fields: [bundleId], references: [id])
+
+  externalId        String             @unique  // Distributor's subscription ID
+  status            SubscriptionStatus @default(PENDING)
+  commitmentEndDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  licenses         License[]
+  billingSnapshots BillingSnapshot[]
+
+  @@index([organizationId])
+  @@map("subscriptions")
 }
 
 model License {
-  id              String       @id @default(cuid())
-  subscriptionId  String
-  subscription    Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  productOfferingId String?
+  productOffering   ProductOffering? @relation(fields: [productOfferingId], references: [id])
+
   quantity        Int
-  pendingQuantity Int?         // For "Scheduled" Inngest actions
+  // Staged quantity for a commitment-gated scale-down.
+  // Promoted to `quantity` by the Inngest workflow after commitmentEndDate.
+  pendingQuantity Int?
+
+  // Tracks the Inngest run responsible for promoting pendingQuantity.
+  // Required to check status, cancel, or correlate AuditLog entries.
+  inngestRunId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([subscriptionId])
+  @@map("licenses")
 }
+
+// =============================================================
+// 7. COMMERCE — Purchase Transactions
+// =============================================================
+
+model PurchaseTransaction {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  productOfferingId String
+  productOffering   ProductOffering @relation(fields: [productOfferingId], references: [id])
+
+  quantity        Int
+  grossAmount     Decimal
+  ourMarginEarned Decimal
+
+  // --- Commitment Fields ---
+  nonRefundableUntil DateTime?
+  isScheduled        Boolean   @default(false)
+
+  distributorReference String?
+  status               TransactionStatus @default(COMPLETED)
+
+  // Globally unique. Required — do not allow nullable idempotency keys.
+  idempotencyKey String @unique
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("purchase_transactions")
+}
+
+// =============================================================
+// 8. BILLING & RECONCILIATION
+// =============================================================
+
+model BillingSnapshot {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  // Optional: link snapshot to a specific subscription for per-sub reconciliation
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  projectedAmount Decimal
+  periodStart     DateTime
+  periodEnd       DateTime
+
+  // Breakdown by distributor, committed changes, etc.
+  // Documented schema: { distributors: [...], committedChanges: [...] }
+  metadata Json @default("{}")
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@map("billing_snapshots")
+}
+
+// =============================================================
+// 9. AUDIT LOG
+// Immutable append-only. Never update or delete rows from this table.
+// =============================================================
 
 model AuditLog {
   id             String       @id @default(cuid())
   organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  userId         String
-  user           User         @relation(fields: [userId], references: [id])
-  
-  action         String       // e.g., "SCHEDULED_REDUCTION"
-  metadata       Json         // Change details
-  createdAt      DateTime     @default(now())
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id])
+
+  action    String   // e.g., "license.scale_down.staged", "license.scale_down.executed"
+  entityId  String?  // ID of the affected record
+  before    Json?    // State snapshot before the mutation
+  after     Json?    // State snapshot after the mutation
+  traceId   String?  // Correlates to the request traceId from proxy.ts
+
+  createdAt DateTime @default(now())
+
+  @@index([organizationId])
+  @@index([entityId])
+  @@map("audit_logs")
 }
