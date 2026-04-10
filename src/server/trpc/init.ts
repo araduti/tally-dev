@@ -162,7 +162,9 @@ const idempotencyGuard = t.middleware(async ({ next, input }) => {
     });
   }
 
-  const cacheKey = `idempotency:${idempotencyKey}`;
+  // Scope to organizationId to prevent cross-org cache collisions
+  const orgId = (ctx as any).organizationId ?? 'global';
+  const cacheKey = `idempotency:${orgId}:${idempotencyKey}`;
   const cached = await redis.get(cacheKey);
 
   if (cached) {

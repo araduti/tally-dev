@@ -85,8 +85,8 @@ export const subscriptionRouter = router({
         throw dpaNotAcceptedError(ctx.organizationId!, '2024-01');
       }
 
-      // Check provisioning gate
-      const org = await prisma.organization.findUnique({
+      // Check provisioning gate via RLS proxy
+      const org = await ctx.db.organization.findUnique({
         where: { id: ctx.organizationId! },
         select: { provisioningEnabled: true },
       });

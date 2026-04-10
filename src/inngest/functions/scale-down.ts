@@ -1,6 +1,6 @@
 import { inngest } from '../client';
 import { withTenantContext } from '@/lib/tenant';
-import { prisma } from '@/lib/db';
+import { createRLSProxy } from '@/lib/rls-proxy';
 
 /**
  * Commitment-Gated Scale-Down Workflow
@@ -17,7 +17,7 @@ export const commitmentScaleDown = inngest.createFunction(
   },
   { event: 'license/scale-down.staged' },
   async ({ event, step }) => {
-    const { licenseId, organizationId, commitmentEndDate, userId } = event.data;
+    const { licenseId, organizationId, commitmentEndDate, userId, traceId } = event.data;
 
     // Step 1: Sleep until the commitment window expires
     await step.sleepUntil('wait-for-commitment', new Date(commitmentEndDate));
@@ -25,12 +25,19 @@ export const commitmentScaleDown = inngest.createFunction(
     // Step 2: Execute the scale-down within tenant context
     await step.run('execute-scale-down', async () => {
       await withTenantContext(organizationId, async () => {
-        const license = await prisma.license.findUnique({
-          where: { id: licenseId },
+        const db = createRLSProxy(organizationId);
+
+        // License doesn't have organizationId — query via subscription join
+        const { prisma } = await import('@/lib/db');
+        const subscriptions = await db.subscription.findMany({ select: { id: true } });
+        const subscriptionIds = subscriptions.map((s: any) => s.id);
+
+        const license = await prisma.license.findFirst({
+          where: { id: licenseId, subscriptionId: { in: subscriptionIds } },
         });
 
         if (!license || license.pendingQuantity === null) {
-          // Scale-down was cancelled — nothing to do
+          // Scale-down was cancelled or license not in this org — nothing to do
           return;
         }
 
@@ -39,7 +46,7 @@ export const commitmentScaleDown = inngest.createFunction(
 
         // Promote pendingQuantity → quantity
         await prisma.license.update({
-          where: { id: licenseId },
+          where: { id: license.id },
           data: {
             quantity: newQuantity,
             pendingQuantity: null,
@@ -47,15 +54,15 @@ export const commitmentScaleDown = inngest.createFunction(
           },
         });
 
-        // Write audit log
-        await prisma.auditLog.create({
+        // Write audit log via RLS proxy
+        await db.auditLog.create({
           data: {
-            organizationId,
             userId: userId ?? null,
             action: 'license.scale_down.executed',
             entityId: licenseId,
             before: { quantity: beforeQuantity } as any,
             after: { quantity: newQuantity } as any,
+            traceId: traceId ?? null,
           },
         });
       });
