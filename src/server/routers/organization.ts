@@ -1,8 +1,22 @@
 import { z } from 'zod';
-import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
 import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError } from '@/lib/errors';
+
+/**
+ * Parses a named cookie value from a raw cookie header string.
+ */
+function parseCookie(cookieHeader: string, name: string): string | undefined {
+  const cookies = cookieHeader.split(';').map((c) => c.trim());
+  for (const cookie of cookies) {
+    const [key, ...rest] = cookie.split('=');
+    if (key === name) {
+      return rest.join('=');
+    }
+  }
+  return undefined;
+}
 
 /**
  * Explicit schema for Organization metadata — flat key-value pairs
@@ -197,5 +211,184 @@ export const organizationRouter = router({
       });
 
       return { organization: clientOrg };
+    }),
+
+  switchOrg: authenticatedMutationProcedure
+    .input(z.object({
+      organizationId: z.string().cuid(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { prisma } = await import('@/lib/db');
+
+      // --- 1. Validate the target organization exists and is active ---
+      const targetOrg = await prisma.organization.findUnique({
+        where: { id: input.organizationId },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          organizationType: true,
+          deletedAt: true,
+          parentOrganizationId: true,
+        },
+      });
+
+      if (!targetOrg || targetOrg.deletedAt !== null) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ORGANIZATION:SWITCH:ORG_NOT_FOUND',
+        });
+      }
+
+      // --- 2. Verify the user has access to the target org ---
+      const userId = ctx.userId;
+
+      // Platform admins can switch to any org
+      const isPlatformAdmin = ctx.effectiveRole.platformRole === 'SUPER_ADMIN'
+        || ctx.effectiveRole.platformRole === 'SUPPORT';
+
+      if (!isPlatformAdmin) {
+        // Check direct membership
+        const directMember = await prisma.member.findUnique({
+          where: { organizationId_userId: { organizationId: targetOrg.id, userId } },
+        });
+
+        if (!directMember) {
+          // Check MSP delegation — user may be a member of the parent MSP org
+          let hasMspAccess = false;
+
+          if (targetOrg.parentOrganizationId) {
+            const mspMember = await prisma.member.findUnique({
+              where: {
+                organizationId_userId: {
+                  organizationId: targetOrg.parentOrganizationId,
+                  userId,
+                },
+              },
+            });
+            hasMspAccess = mspMember?.mspRole !== null && mspMember?.mspRole !== undefined;
+          }
+
+          if (!hasMspAccess) {
+            throw createBusinessError({
+              code: 'FORBIDDEN',
+              message: 'You do not have access to this organization',
+              errorCode: 'AUTH:RBAC:INSUFFICIENT',
+            });
+          }
+        }
+      }
+
+      // --- 3. Update the session's active organization ---
+      const cookieHeader = ctx.headers.get('cookie') ?? '';
+      const sessionToken = parseCookie(cookieHeader, 'better-auth.session_token');
+
+      if (!sessionToken) {
+        throw createBusinessError({
+          code: 'UNAUTHORIZED',
+          message: 'Session not found',
+          errorCode: 'AUTH:SESSION:TOKEN_NOT_FOUND',
+        });
+      }
+
+      await prisma.session.update({
+        where: { token: sessionToken },
+        data: { activeOrganizationId: targetOrg.id },
+      });
+
+      // --- 4. Audit log against the target org ---
+      await writeAuditLog({
+        db: prisma,
+        organizationId: targetOrg.id,
+        userId,
+        action: 'organization.switched',
+        entityId: targetOrg.id,
+        before: { activeOrganizationId: ctx.organizationId },
+        after: { activeOrganizationId: targetOrg.id },
+        traceId: ctx.traceId,
+      });
+
+      return {
+        organization: {
+          id: targetOrg.id,
+          name: targetOrg.name,
+          slug: targetOrg.slug,
+          organizationType: targetOrg.organizationType,
+        },
+      };
+    }),
+
+  acceptDpa: orgOwnerMutationProcedure
+    .input(z.object({
+      version: z.string().min(1),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // --- 1. Check for existing acceptance (idempotent) ---
+      const existing = await ctx.db.dpaAcceptance.findUnique({
+        where: {
+          organizationId_version: {
+            organizationId: ctx.organizationId!,
+            version: input.version,
+          },
+        },
+        select: {
+          id: true,
+          version: true,
+          acceptedAt: true,
+          acceptedByUserId: true,
+        },
+      });
+
+      if (existing) {
+        return {
+          dpaAcceptance: {
+            id: existing.id,
+            version: existing.version,
+            acceptedAt: existing.acceptedAt,
+            userId: existing.acceptedByUserId,
+          },
+        };
+      }
+
+      // --- 2. Create the DPA acceptance record ---
+      const dpaAcceptance = await ctx.db.dpaAcceptance.create({
+        data: {
+          organizationId: ctx.organizationId!,
+          acceptedByUserId: ctx.userId,
+          version: input.version,
+        },
+        select: {
+          id: true,
+          version: true,
+          acceptedAt: true,
+          acceptedByUserId: true,
+        },
+      });
+
+      // --- 3. Audit log ---
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'organization.dpa_accepted',
+        entityId: dpaAcceptance.id,
+        after: {
+          version: dpaAcceptance.version,
+          acceptedAt: dpaAcceptance.acceptedAt,
+        },
+        traceId: ctx.traceId,
+      });
+
+      return {
+        dpaAcceptance: {
+          id: dpaAcceptance.id,
+          version: dpaAcceptance.version,
+          acceptedAt: dpaAcceptance.acceptedAt,
+          userId: dpaAcceptance.acceptedByUserId,
+        },
+      };
     }),
 });
