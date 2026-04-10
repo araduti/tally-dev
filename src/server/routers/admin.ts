@@ -258,7 +258,7 @@ export const adminRouter = router({
         });
       }
 
-      if (invitation.status !== 'PENDING') {
+      if (invitation.status !== InvitationStatus.PENDING) {
         throw createBusinessError({
           code: 'BAD_REQUEST',
           message: `Invitation cannot be revoked because it is ${invitation.status}`,
@@ -268,7 +268,7 @@ export const adminRouter = router({
 
       const updated = await ctx.db.invitation.update({
         where: { id: invitation.id },
-        data: { status: 'REVOKED' },
+        data: { status: InvitationStatus.REVOKED },
       });
 
       await writeAuditLog({
