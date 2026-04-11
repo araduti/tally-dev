@@ -1,6 +1,6 @@
 # LEFT.md — Remaining Features, TODOs & Missing Wirings
 
-> Auto-generated audit of the Tally codebase. Organized by severity and layer.
+> Comprehensive audit of the Tally codebase. Organized by severity and layer.
 
 ---
 
