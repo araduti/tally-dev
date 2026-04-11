@@ -54,6 +54,7 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [compareBundle, setCompareBundle] = useState<SerializedBundle | null>(null);
   const [compareQuantity, setCompareQuantity] = useState(1);
+  const [purchaseSuccess, setPurchaseSuccess] = useState<string | null>(null);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Debounce search term with proper cleanup
@@ -119,6 +120,13 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
         }))
       }
     : null;
+
+  const createSubscription = api.subscription.create.useMutation({
+    onSuccess: () => {
+      setPurchaseSuccess('Purchase completed successfully! View your new subscription in the Subscriptions page.');
+      setTimeout(() => setPurchaseSuccess(null), 5000);
+    },
+  });
 
   return (
     <div>
@@ -246,6 +254,17 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
 
           {pricingResult && !pricingLoading && (
             <div className="overflow-x-auto">
+              {purchaseSuccess && (
+                <div className="mx-6 mt-4 p-3 rounded-lg bg-green-900/30 border border-green-700 text-green-300 text-sm" role="status">
+                  {purchaseSuccess}
+                </div>
+              )}
+
+              {createSubscription.isError && (
+                <div className="mx-6 mt-4 p-3 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm" role="alert">
+                  {createSubscription.error.message}
+                </div>
+              )}
               {pricingResult.options.length === 0 ? (
                 <div className="p-6 text-center text-slate-400">
                   No pricing options available for this bundle.
@@ -260,6 +279,7 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
                       <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Margin</th>
                       <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Availability</th>
                       <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Eligible</th>
+                      <th className="px-6 py-3 text-xs font-medium text-slate-400 uppercase tracking-wider">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-700">
@@ -305,6 +325,27 @@ export function MarketplaceClient({ initialBundles, initialNextCursor }: Marketp
                                 ? ` (${option.minQuantity ?? 0}–${option.maxQuantity ?? '∞'})`
                                 : ''}
                             </span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          {option.isEligible && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (window.confirm(`Purchase ${compareQuantity} × ${compareBundle?.name} via ${option.sourceType} for ${option.currency} ${option.totalCost}?`)) {
+                                  createSubscription.mutate({
+                                    productOfferingId: option.productOfferingId,
+                                    quantity: compareQuantity,
+                                    idempotencyKey: crypto.randomUUID(),
+                                  });
+                                }
+                              }}
+                              disabled={createSubscription.isPending}
+                              className="px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition"
+                              aria-label={`Buy through ${option.sourceType}`}
+                            >
+                              {createSubscription.isPending ? 'Buying…' : 'Buy'}
+                            </button>
                           )}
                         </td>
                       </tr>
