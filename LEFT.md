@@ -41,10 +41,10 @@
 - **Status:** IMPLEMENTED
 - CI pipeline: lint+typecheck → unit tests → build. Runs on push/PR to main.
 
-### 8. No E2E Tests
+### 8. ~~No E2E Tests~~ ✅ DONE
 - **File:** `playwright.config.ts` → `testDir: './tests/e2e'`
-- **Status:** NOT IMPLEMENTED
-- Config references `./tests/e2e/` but the directory does not exist. Zero end-to-end test files.
+- **Status:** IMPLEMENTED
+- Skeleton E2E tests created for auth, dashboard, subscriptions, compliance, and settings flows. Shared login helper in `tests/e2e/helpers.ts`. Uses `@playwright/test` with `data-testid` selectors.
 
 ### 9. No Integration Tests
 - **File:** `vitest.integration.config.ts` → `**/__tests__/**/*.integration.test.ts`
