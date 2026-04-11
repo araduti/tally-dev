@@ -1,8 +1,8 @@
 import { z } from 'zod';
-import { router, orgOwnerProcedure, orgOwnerMutationProcedure } from '../trpc/init';
+import { router, orgOwnerProcedure, orgOwnerMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
 import { OrgRole, MspRole, InvitationStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, invitationInvalidStatusError } from '@/lib/errors';
+import { createBusinessError, invitationInvalidStatusError, invitationExpiredError } from '@/lib/errors';
 
 export const adminRouter = router({
   listMembers: orgOwnerProcedure
@@ -300,6 +300,176 @@ export const adminRouter = router({
         invitation: {
           id: updated.id,
           status: updated.status as 'REVOKED',
+        },
+      };
+    }),
+
+  acceptInvitation: authenticatedMutationProcedure
+    .input(z.object({
+      invitationId: z.string().cuid(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { prisma } = await import('@/lib/db');
+
+      // Find the invitation (use raw prisma since user may not be in the org yet)
+      const invitation = await prisma.invitation.findUnique({
+        where: { id: input.invitationId },
+      });
+
+      if (!invitation) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Invitation not found',
+          errorCode: 'ADMIN:INVITATION:NOT_FOUND',
+        });
+      }
+
+      // Verify the invitation is for this user's email
+      const user = await prisma.user.findUnique({
+        where: { id: ctx.userId },
+      });
+
+      if (!user || user.email !== invitation.email) {
+        throw createBusinessError({
+          code: 'FORBIDDEN',
+          message: 'This invitation is not for your account',
+          errorCode: 'ADMIN:INVITATION:WRONG_USER',
+        });
+      }
+
+      // Check invitation status
+      if (invitation.status !== 'PENDING') {
+        throw invitationInvalidStatusError();
+      }
+
+      // Check expiry
+      if (invitation.expiresAt < new Date()) {
+        throw invitationExpiredError();
+      }
+
+      // Check if user is already a member
+      const existingMember = await prisma.member.findUnique({
+        where: {
+          organizationId_userId: {
+            organizationId: invitation.organizationId,
+            userId: ctx.userId,
+          },
+        },
+      });
+
+      if (existingMember) {
+        throw createBusinessError({
+          code: 'CONFLICT',
+          message: 'You are already a member of this organization',
+          errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS',
+        });
+      }
+
+      // Create member and update invitation in a transaction
+      const [member, updatedInvitation] = await prisma.$transaction([
+        prisma.member.create({
+          data: {
+            organizationId: invitation.organizationId,
+            userId: ctx.userId,
+            orgRole: invitation.orgRole,
+            mspRole: invitation.mspRole,
+          },
+        }),
+        prisma.invitation.update({
+          where: { id: invitation.id },
+          data: { status: 'ACCEPTED' },
+        }),
+      ]);
+
+      // Write audit log (use raw prisma since we need to target the invitation's org)
+      await prisma.auditLog.create({
+        data: {
+          organizationId: invitation.organizationId,
+          userId: ctx.userId,
+          action: 'admin.invitation_accepted',
+          entityId: invitation.id,
+          after: {
+            memberId: member.id,
+            orgRole: member.orgRole,
+            mspRole: member.mspRole,
+          },
+          traceId: ctx.traceId ?? null,
+        },
+      });
+
+      return {
+        member: {
+          id: member.id,
+          organizationId: member.organizationId,
+          orgRole: member.orgRole,
+          mspRole: member.mspRole,
+        },
+        invitation: {
+          id: updatedInvitation.id,
+          status: updatedInvitation.status,
+        },
+      };
+    }),
+
+  rejectInvitation: authenticatedMutationProcedure
+    .input(z.object({
+      invitationId: z.string().cuid(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { prisma } = await import('@/lib/db');
+
+      const invitation = await prisma.invitation.findUnique({
+        where: { id: input.invitationId },
+      });
+
+      if (!invitation) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Invitation not found',
+          errorCode: 'ADMIN:INVITATION:NOT_FOUND',
+        });
+      }
+
+      // Verify the invitation is for this user's email
+      const user = await prisma.user.findUnique({
+        where: { id: ctx.userId },
+      });
+
+      if (!user || user.email !== invitation.email) {
+        throw createBusinessError({
+          code: 'FORBIDDEN',
+          message: 'This invitation is not for your account',
+          errorCode: 'ADMIN:INVITATION:WRONG_USER',
+        });
+      }
+
+      if (invitation.status !== 'PENDING') {
+        throw invitationInvalidStatusError();
+      }
+
+      const updated = await prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: 'REJECTED' },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          organizationId: invitation.organizationId,
+          userId: ctx.userId,
+          action: 'admin.invitation_rejected',
+          entityId: invitation.id,
+          before: { status: invitation.status },
+          after: { status: updated.status },
+          traceId: ctx.traceId ?? null,
+        },
+      });
+
+      return {
+        invitation: {
+          id: updated.id,
+          status: updated.status as 'REJECTED',
         },
       };
     }),
