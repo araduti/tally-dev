@@ -114,9 +114,10 @@
 - **Status:** IMPLEMENTED
 - Returns `requiredVersion`, `acceptedVersion`, and `isOutdated` boolean so clients can compare what's required vs what's accepted.
 
-### 21. No Projected Invoice View in UI
+### 21. ~~No Projected Invoice View in UI~~ ✅ DONE
 - **File:** `src/app/(dashboard)/billing/billing-client.tsx`
-- The `projectInvoice` tRPC query exists in the backend but is never called from the billing UI. No cost-breakdown or forecast visualization.
+- **Status:** IMPLEMENTED
+- `ProjectedInvoice` component calls `api.billing.projectInvoice.useQuery({})` and renders a cost breakdown card with projected total, billing period dates, and line item table (bundle, distributor, quantity, unit cost, line total). Shows pending scale-down indicators and commitment end dates. Gracefully handles loading (skeleton), empty (no subscriptions), and error (insufficient permissions) states. Uses Decimal.js for all monetary formatting.
 
 ### 22. No Create-License UI (Only Bulk Import)
 - **File:** `src/app/(dashboard)/licenses/`
