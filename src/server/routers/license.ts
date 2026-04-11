@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { router, orgMemberProcedure, mspTechMutationProcedure } from '../trpc/init';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError, offeringUnavailableError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
+import { inngest } from '@/inngest/client';
 import Decimal from 'decimal.js';
 
 /**
@@ -241,6 +242,18 @@ export const licenseRouter = router({
           before: { quantity: license.quantity },
           after: { pendingQuantity: input.newQuantity, inngestRunId },
           traceId: ctx.traceId,
+        });
+
+        // Dispatch the durable workflow to execute the scale-down at commitment end
+        await inngest.send({
+          name: 'license/scale-down.staged',
+          data: {
+            licenseId: license.id,
+            organizationId: ctx.organizationId!,
+            commitmentEndDate: license.subscription.commitmentEndDate!.toISOString(),
+            userId: ctx.userId,
+            traceId: ctx.traceId,
+          },
         });
 
         return {

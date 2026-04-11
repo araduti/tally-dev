@@ -127,6 +127,7 @@ export const adminRouter = router({
       idempotencyKey: z.string().uuid(),
     }))
     .mutation(async ({ ctx, input }) => {
+      // Prevent owner from demoting themselves — could lock the org out of owner-only actions
       const member = await ctx.db.member.findFirst({
         where: { id: input.memberId },
       });
@@ -136,6 +137,14 @@ export const adminRouter = router({
           code: 'NOT_FOUND',
           message: 'Member not found',
           errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
+      }
+
+      if (member.userId === ctx.userId) {
+        throw createBusinessError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot change your own role. Ask another owner to update your role.',
+          errorCode: 'ADMIN:MEMBER:SELF_ROLE_CHANGE',
         });
       }
 
@@ -184,6 +193,15 @@ export const adminRouter = router({
           code: 'NOT_FOUND',
           message: 'Member not found',
           errorCode: 'ADMIN:MEMBER:NOT_FOUND',
+        });
+      }
+
+      // Prevent owner from removing themselves — would lose access permanently
+      if (member.userId === ctx.userId) {
+        throw createBusinessError({
+          code: 'BAD_REQUEST',
+          message: 'Cannot remove yourself from the organization. Ask another owner to remove you.',
+          errorCode: 'ADMIN:MEMBER:SELF_REMOVAL',
         });
       }
 

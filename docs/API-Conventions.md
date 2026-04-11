@@ -274,6 +274,7 @@ DOMAIN:CATEGORY:CODE
 | Error Code | tRPC Code | Description | Recovery |
 |---|---|---|---|
 | `AUTH:SESSION:NO_ORG` | `PRECONDITION_FAILED` | User is logged in but `activeOrganizationId` is not set | `REDIRECT_ORG_SWITCHER` |
+| `AUTH:SESSION:TOKEN_NOT_FOUND` | `UNAUTHORIZED` | Session token not found — user must re-authenticate | `NONE` |
 | `AUTH:RBAC:INSUFFICIENT` | `FORBIDDEN` | Role resolved but lacks required permission for this action | `REQUEST_ACCESS` |
 | `AUTH:RBAC:MSP_DELEGATION_DENIED` | `FORBIDDEN` | MSP user's role doesn't cover this action on the client org | `REQUEST_ACCESS` |
 
@@ -283,6 +284,8 @@ DOMAIN:CATEGORY:CODE
 |---|---|---|---|
 | `VENDOR:AUTH:EXPIRED` | `PRECONDITION_FAILED` | VendorConnection credentials are expired or revoked | `REAUTH_VENDOR` |
 | `VENDOR:AUTH:DISCONNECTED` | `PRECONDITION_FAILED` | VendorConnection status is `DISCONNECTED` | `REAUTH_VENDOR` |
+| `VENDOR:AUTH:NOT_FOUND` | `NOT_FOUND` | Vendor connection not found in this organization | `NONE` |
+| `VENDOR:AUTH:DUPLICATE` | `CONFLICT` | An active connection of this vendor type already exists | `NONE` |
 | `VENDOR:API:UPSTREAM_ERROR` | `INTERNAL_SERVER_ERROR` | Distributor API returned an error | `CONTACT_SUPPORT` |
 | `VENDOR:API:RATE_LIMITED` | `TOO_MANY_REQUESTS` | Distributor API quota exceeded | `NONE` |
 
@@ -292,7 +295,9 @@ DOMAIN:CATEGORY:CODE
 |---|---|---|---|
 | `LICENSE:NCE:WINDOW_ACTIVE` | `PRECONDITION_FAILED` | Scale-down blocked by active NCE commitment window | `SCHEDULE_FOR_RENEWAL` |
 | `LICENSE:QUANTITY:OUT_OF_RANGE` | `BAD_REQUEST` | Requested quantity outside `minQuantity`/`maxQuantity` bounds | `NONE` |
+| `LICENSE:QUANTITY:NOT_FOUND` | `NOT_FOUND` | License not found in this organization | `NONE` |
 | `LICENSE:SCALE_DOWN:PENDING` | `CONFLICT` | A `pendingQuantity` is already staged for this license | `REVIEW_QUEUE` |
+| `LICENSE:SCALE_DOWN:NO_PENDING` | `BAD_REQUEST` | No pending scale-down exists to cancel | `NONE` |
 
 #### CATALOG — Offerings & Pricing
 
@@ -322,11 +327,38 @@ DOMAIN:CATEGORY:CODE
 |---|---|---|---|
 | `DATA:SYNC:STALE` | `PRECONDITION_FAILED` | Last successful vendor sync > 24 hours ago — data may be outdated | `FORCE_SYNC` |
 
+#### SUBSCRIPTION — Subscription Lifecycle
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `SUBSCRIPTION:LIFECYCLE:NOT_FOUND` | `NOT_FOUND` | Subscription not found in this organization | `NONE` |
+
+#### BILLING — Transactions & Snapshots
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `BILLING:SNAPSHOT:NOT_FOUND` | `NOT_FOUND` | Billing snapshot not found for the given criteria | `NONE` |
+
+#### ORGANIZATION — Organization Management
+
+| Error Code | tRPC Code | Description | Recovery |
+|---|---|---|---|
+| `ORGANIZATION:LIFECYCLE:NOT_FOUND` | `NOT_FOUND` | Organization not found | `NONE` |
+| `ORGANIZATION:LIFECYCLE:ALREADY_DEACTIVATED` | `CONFLICT` | Organization is already deactivated | `NONE` |
+| `ORGANIZATION:SLUG:DUPLICATE` | `CONFLICT` | Slug already taken by another organization | `NONE` |
+| `ORGANIZATION:SWITCH:ORG_NOT_FOUND` | `NOT_FOUND` | Target organization not found or inaccessible | `NONE` |
+
 #### ADMIN — Member & Role Management
 
 | Error Code | tRPC Code | Description | Recovery |
 |---|---|---|---|
 | `ADMIN:MEMBER:ALREADY_EXISTS` | `CONFLICT` | User already has a Member record in this organization | `NONE` |
+| `ADMIN:MEMBER:NOT_FOUND` | `NOT_FOUND` | Member not found in this organization | `NONE` |
+| `ADMIN:MEMBER:INVALID_ROLE` | `BAD_REQUEST` | Exactly one of `orgRole` or `mspRole` must be provided | `NONE` |
+| `ADMIN:MEMBER:SELF_ROLE_CHANGE` | `BAD_REQUEST` | Cannot change your own role — ask another owner | `NONE` |
+| `ADMIN:MEMBER:SELF_REMOVAL` | `BAD_REQUEST` | Cannot remove yourself — ask another owner | `NONE` |
+| `ADMIN:INVITATION:CONFLICT` | `CONFLICT` | Cannot send invitation to this email address (prevents enumeration) | `NONE` |
+| `ADMIN:INVITATION:NOT_FOUND` | `NOT_FOUND` | Invitation not found in this organization | `NONE` |
 | `ADMIN:INVITATION:ALREADY_PENDING` | `CONFLICT` | An active invitation already exists for this email in this org | `NONE` |
 | `ADMIN:INVITATION:EXPIRED` | `PRECONDITION_FAILED` | Invitation has expired and cannot be accepted | `RESEND_INVITATION` |
 | `ADMIN:INVITATION:INVALID_STATUS` | `BAD_REQUEST` | Invitation is not in `PENDING` status — cannot be accepted/rejected | `NONE` |

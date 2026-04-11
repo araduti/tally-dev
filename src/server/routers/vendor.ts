@@ -4,6 +4,7 @@ import { VendorType, VendorConnectionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { encrypt } from '@/lib/encryption';
 import { createBusinessError, dpaNotAcceptedError, vendorAuthDisconnectedError } from '@/lib/errors';
+import { inngest } from '@/inngest/client';
 
 export const vendorRouter = router({
   listConnections: mspTechProcedure
@@ -174,6 +175,16 @@ export const vendorRouter = router({
         entityId: connection.id,
         after: { syncId },
         traceId: ctx.traceId,
+      });
+
+      // Dispatch the durable catalog sync workflow
+      await inngest.send({
+        name: 'vendor/catalog-sync.requested',
+        data: {
+          vendorConnectionId: input.vendorConnectionId,
+          organizationId: ctx.organizationId!,
+          traceId: ctx.traceId,
+        },
       });
 
       return { syncId, status: 'ENQUEUED' as const };
