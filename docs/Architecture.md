@@ -44,7 +44,7 @@
 └──────────────────────┬──────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────┐
-│         proxy.ts                            │
+│         src/server/trpc/init.ts                │
 │   Central Trust Boundary & Auth             │
 │   - Session validation                      │
 │   - organizationId injection                │
@@ -86,8 +86,8 @@
 
 Every mutating request follows this path:
 
-1. **Client** sends a request with a session cookie and an `Idempotency-Key` header.
-2. **`proxy.ts`** validates the session, extracts `organizationId`, resolves the effective role, and rejects duplicates via the idempotency store.
+1. **Client** sends a request with a session cookie and an `idempotencyKey` field in the mutation input.
+2. **`src/server/trpc/init.ts`** validates the session, extracts `organizationId`, resolves the effective role, and rejects duplicates via the idempotency store.
 3. **tRPC router** receives the request; the RLS Prisma Proxy is initialised with the resolved `organizationId` via `AsyncLocalStorage`.
 4. **Business logic** executes — all DB calls are automatically scoped. Sensitive vendor credentials are decrypted only at call time.
 5. **Inngest** is enqueued for any operation that requires a deferred or durable step (e.g., commitment-gated scale-downs).
@@ -311,7 +311,7 @@ User requests scale-down
 | Control | Implementation |
 |---|---|
 | Row-Level Security | Enforced via Prisma Proxy on every query; bypassing it is a build-time violation. |
-| RBAC | Three-tier role model resolved at `proxy.ts`; MSP delegation checked via `parentOrganizationId` traversal. |
+| RBAC | Three-tier role model resolved at `src/server/trpc/init.ts`; MSP delegation checked via `parentOrganizationId` traversal. |
 | Encryption at rest | AES-256-GCM for all `VendorConnection` credential fields. |
 | File isolation | Garage (S3) objects prefixed with `org/{organizationId}/`. Cross-org access is impossible by design. |
 | Cache isolation | Redis keys prefixed with `cache:{organizationId}:`. |
@@ -337,7 +337,7 @@ All business errors use a hierarchical `DOMAIN:CATEGORY:CODE` format with option
 | Error Type | Example Code | Handling Strategy |
 |---|---|---|
 | Validation error (Zod) | — | Rejected at the router boundary; client receives a typed `BAD_REQUEST` error. |
-| Auth / RBAC violation | `AUTH:RBAC:INSUFFICIENT` | Rejected at `proxy.ts`; returns 403 with `recovery: REQUEST_ACCESS`. No internal detail leaked. |
+| Auth / RBAC violation | `AUTH:RBAC:INSUFFICIENT` | Rejected at `src/server/trpc/init.ts`; returns 403 with `recovery: REQUEST_ACCESS`. No internal detail leaked. |
 | Vendor API error | `VENDOR:API:UPSTREAM_ERROR` | Caught in the adapter layer; written to `AuditLog`; surfaced as 500 with safe message only. |
 | Vendor auth expired | `VENDOR:AUTH:EXPIRED` | Returns 412 with `recovery: REAUTH_VENDOR`; vendor connection set to stalled state. |
 | Commitment violation | `LICENSE:NCE:WINDOW_ACTIVE` | Blocked at business logic; returns 412 with `recovery: SCHEDULE_FOR_RENEWAL` and `commitmentEndDate`. |
@@ -348,7 +348,7 @@ All business errors use a hierarchical `DOMAIN:CATEGORY:CODE` format with option
 
 ### Tracing
 
-Each request carries a `traceId` (generated at `proxy.ts`) that is threaded through tRPC context, Inngest jobs, and log output for end-to-end correlation.
+Each request carries a `traceId` (generated at `src/server/trpc/init.ts`) that is threaded through tRPC context, Inngest jobs, and log output for end-to-end correlation.
 
 ---
 

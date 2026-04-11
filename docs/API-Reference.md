@@ -28,7 +28,7 @@ Each procedure is documented with:
 | **Type** | `query` or `mutation` |
 | **Description** | What the procedure does |
 | **Minimum Role** | Lowest role tier that can call this procedure |
-| **Idempotent** | Whether the procedure requires an `Idempotency-Key` (all mutations do) |
+| **Idempotent** | Whether the procedure requires an `idempotencyKey` input field (all mutations do) |
 | **Input** | Zod schema for the request payload |
 | **Output** | Shape of the response |
 | **Side Effects** | AuditLog entries, Inngest jobs, cache invalidations |
@@ -55,8 +55,8 @@ z.object({
   cursor: z.string().cuid().optional(),
   limit: z.number().int().min(1).max(100).default(25),
   where: z.object({
-    category: z.string().optional(),
-    name: z.string().optional(), // partial match
+    category: z.string().min(1).optional(),
+    name: z.string().min(1).optional(), // partial match
   }).optional(),
   orderBy: z.object({
     field: z.enum(['name', 'createdAt']),
@@ -69,7 +69,7 @@ z.object({
 
 ```typescript
 {
-  items: Bundle[],            // { id, globalSkuId, name, friendlyName, description, category }
+  items: Bundle[],            // { id, globalSkuId, name, friendlyName, description, category, products: BundleProduct[] }
   nextCursor: string | null,
 }
 ```
@@ -103,7 +103,7 @@ z.object({
   friendlyName: string,
   description: string | null,
   category: string | null,
-  products: Product[],
+  products: BundleProduct[],   // join table: { bundleId, productId, product: Product }
   offerings: ProductOffering[],  // all distributor price points for this bundle
 }
 ```
@@ -128,7 +128,7 @@ z.object({
   where: z.object({
     bundleId: z.string().cuid().optional(),
     sourceType: z.nativeEnum(VendorType).optional(),
-    availability: z.string().optional(),
+    availability: z.string().min(1).optional(),
   }).optional(),
 })
 ```
@@ -270,8 +270,8 @@ z.object({
 |---|---|
 | **Type** | `mutation` |
 | **Description** | Create a new subscription by purchasing a Bundle through a specific ProductOffering |
-| **Minimum Role** | `ORG_ADMIN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Minimum Role** | `ORG_ADMIN` / `MSP_ADMIN` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -312,8 +312,8 @@ z.object({
 |---|---|
 | **Type** | `mutation` |
 | **Description** | Cancel a subscription. If within a commitment window, the cancellation is scheduled. |
-| **Minimum Role** | `ORG_ADMIN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Minimum Role** | `ORG_ADMIN` / `MSP_ADMIN` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -418,7 +418,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Increase license quantity. Executed immediately — no commitment window restriction on scale-ups. |
 | **Minimum Role** | `ORG_ADMIN` / `MSP_TECHNICIAN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -457,7 +457,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Decrease license quantity. If a commitment window is active, the change is staged as `pendingQuantity` and executed by an Inngest workflow after the window expires. |
 | **Minimum Role** | `ORG_ADMIN` / `MSP_TECHNICIAN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -499,7 +499,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Cancel a previously staged scale-down. Clears `pendingQuantity` and cancels the Inngest workflow. |
 | **Minimum Role** | `ORG_ADMIN` / `MSP_TECHNICIAN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -575,7 +575,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Establish a new vendor connection with encrypted credentials |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -616,7 +616,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Disconnect a vendor connection. Credentials are securely erased. |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -649,7 +649,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Trigger a manual catalog sync for a vendor connection. Fetches latest pricing and availability. |
 | **Minimum Role** | `ORG_ADMIN` / `MSP_ADMIN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -839,7 +839,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Invite a user to join the active organization with a specific role |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -885,7 +885,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Update a member's role within the organization |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -922,7 +922,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Remove a member from the organization |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -993,7 +993,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Revoke a pending invitation. Only `PENDING` invitations can be revoked. |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -1120,7 +1120,7 @@ z.object({}) // no input — uses active org from session
 | **Type** | `mutation` |
 | **Description** | Update organization settings |
 | **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -1195,7 +1195,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Create a new client organization under the active MSP org |
 | **Minimum Role** | `MSP_ADMIN` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -1243,7 +1243,7 @@ z.object({
 | **Type** | `mutation` |
 | **Description** | Switch the active organization for the current session. Validates access through direct membership, MSP delegation, or platform admin role. |
 | **Minimum Role** | Authenticated (any role — access validated dynamically) |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -1321,8 +1321,8 @@ z.object({}) // no input — uses active org from session
 |---|---|
 | **Type** | `mutation` |
 | **Description** | Soft-delete the active organization by setting `deletedAt`. The organization is not hard-deleted to preserve audit trail and compliance records. |
-| **Minimum Role** | `ORG_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` |
+| **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input |
 
 **Input:**
 
@@ -1357,8 +1357,8 @@ z.object({
 |---|---|
 | **Type** | `mutation` |
 | **Description** | Accept a specific version of the Data Processing Agreement for the active organization. Idempotent — re-accepting the same version returns the existing record. |
-| **Minimum Role** | `ORG_OWNER` |
-| **Idempotent** | Yes — requires `Idempotency-Key` (also idempotent at the business logic level) |
+| **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
+| **Idempotent** | Yes — requires `idempotencyKey` in input (also idempotent at the business logic level) |
 
 **Input:**
 
