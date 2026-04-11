@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
 import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, insufficientRoleError } from '@/lib/errors';
+import { createBusinessError, insufficientRoleError, provisioningDisabledError } from '@/lib/errors';
 
 /**
  * Parses a named cookie value from a raw cookie header string.
@@ -158,16 +158,16 @@ export const organizationRouter = router({
     .input(z.object({
       name: z.string().min(1).max(255),
       slug: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
-      billingType: z.nativeEnum(BillingType).default('MANUAL_INVOICE'),
+      billingType: z.nativeEnum(BillingType).optional(),
       idempotencyKey: z.string().uuid(),
     }))
     .mutation(async ({ ctx, input }) => {
       const { prisma } = await import('@/lib/db');
 
-      // Verify current org is MSP
+      // Verify current org is MSP and has provisioning enabled
       const org = await prisma.organization.findUnique({
         where: { id: ctx.organizationId! },
-        select: { organizationType: true },
+        select: { organizationType: true, provisioningEnabled: true, billingType: true },
       });
 
       if (org?.organizationType !== 'MSP') {
@@ -177,6 +177,13 @@ export const organizationRouter = router({
           errorCode: 'AUTH:RBAC:MSP_DELEGATION_DENIED',
         });
       }
+
+      if (!org.provisioningEnabled) {
+        throw provisioningDisabledError(ctx.organizationId!);
+      }
+
+      // Inherit billingType from parent MSP when not explicitly provided
+      const effectiveBillingType = input.billingType ?? org.billingType;
 
       // Check slug uniqueness
       const existingSlug = await prisma.organization.findUnique({
@@ -196,7 +203,7 @@ export const organizationRouter = router({
           slug: input.slug,
           organizationType: 'CLIENT',
           parentOrganizationId: ctx.organizationId!,
-          billingType: input.billingType,
+          billingType: effectiveBillingType,
         },
       });
 
@@ -206,7 +213,12 @@ export const organizationRouter = router({
         userId: ctx.userId,
         action: 'organization.client_created',
         entityId: clientOrg.id,
-        after: { name: input.name, slug: input.slug, billingType: input.billingType },
+        after: {
+          name: input.name,
+          slug: input.slug,
+          billingType: effectiveBillingType,
+          parentBillingType: org.billingType,
+        },
         traceId: ctx.traceId,
       });
 
