@@ -1,7 +1,8 @@
 import { z } from 'zod';
-import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgAdminProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { TransactionStatus } from '@prisma/client';
 import { createBusinessError } from '@/lib/errors';
+import { writeAuditLog } from '@/lib/audit';
 import Decimal from 'decimal.js';
 
 export const billingRouter = router({
@@ -122,5 +123,85 @@ export const billingRouter = router({
         totalProjectedAmount: totalProjected.toFixed(2),
         lineItems,
       };
+    }),
+
+  createSnapshot: orgAdminMutationProcedure
+    .input(z.object({
+      periodStart: z.date().optional(),
+      periodEnd: z.date().optional(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const now = new Date();
+      const periodStart = input.periodStart ?? new Date(now.getFullYear(), now.getMonth(), 1);
+      const periodEnd = input.periodEnd ?? new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+      // Idempotent: return existing snapshot for the same period if one exists
+      const existing = await ctx.db.billingSnapshot.findFirst({
+        where: { periodStart, periodEnd },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      // Calculate projected invoice — same logic as projectInvoice
+      const subscriptions = await ctx.db.subscription.findMany({
+        where: { status: 'ACTIVE' },
+        include: {
+          bundle: true,
+          licenses: { include: { productOffering: true } },
+          vendorConnection: { select: { vendorType: true } },
+        },
+      });
+
+      let totalProjected = new Decimal(0);
+      const lineItems = subscriptions.flatMap((sub: any) =>
+        sub.licenses.map((lic: any) => {
+          const unitCost = lic.productOffering?.effectiveUnitCost
+            ? new Decimal(lic.productOffering.effectiveUnitCost.toString())
+            : new Decimal(0);
+          const lineTotal = unitCost.mul(lic.quantity);
+          totalProjected = totalProjected.add(lineTotal);
+
+          return {
+            subscriptionId: sub.id,
+            bundleName: sub.bundle.name,
+            vendorType: sub.vendorConnection.vendorType,
+            quantity: lic.quantity,
+            unitCost: unitCost.toFixed(2),
+            lineTotal: lineTotal.toFixed(2),
+            pendingQuantity: lic.pendingQuantity,
+            commitmentEndDate: sub.commitmentEndDate,
+          };
+        }),
+      );
+
+      const snapshot = await ctx.db.billingSnapshot.create({
+        data: {
+          projectedAmount: new Decimal(totalProjected.toFixed(2)),
+          periodStart,
+          periodEnd,
+          metadata: { lineItems },
+        },
+      });
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'billing.snapshot_created',
+        entityId: snapshot.id,
+        after: {
+          projectedAmount: totalProjected.toFixed(2),
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          lineItemCount: lineItems.length,
+        },
+        traceId: ctx.traceId,
+      });
+
+      return snapshot;
     }),
 });
