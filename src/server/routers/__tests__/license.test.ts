@@ -23,7 +23,8 @@
 // Both blocks are hoisted above all imports by vitest.
 // ──────────────────────────────────────────────
 
-const { prisma, rlsDb, buildDbProxy } = vi.hoisted(() => {
+const { prisma, rlsDb, buildDbProxy, mockSetQuantity } = vi.hoisted(() => {
+  const mockSetQuantity = vi.fn().mockResolvedValue(undefined);
   function createModelProxy(): any {
     const store: Record<string, any> = {};
     return new Proxy(store, {
@@ -46,7 +47,7 @@ const { prisma, rlsDb, buildDbProxy } = vi.hoisted(() => {
     });
   }
 
-  return { prisma: buildDbProxy(), rlsDb: buildDbProxy(), buildDbProxy };
+  return { prisma: buildDbProxy(), rlsDb: buildDbProxy(), buildDbProxy, mockSetQuantity };
 });
 
 vi.mock('@/lib/db', () => ({ prisma }));
@@ -72,6 +73,27 @@ vi.mock('@/lib/rls-proxy', () => ({
   createRLSProxy: vi.fn(() => rlsDb),
 }));
 
+vi.mock('@/adapters', () => ({
+  getAdapter: vi.fn(() => ({
+    setQuantity: mockSetQuantity,
+  })),
+  decryptCredentials: vi.fn(() => ({ clientId: 'id', clientSecret: 'secret' })),
+}));
+
+vi.mock('@/adapters/types', () => {
+  class VendorError extends Error {
+    constructor(
+      public readonly vendorType: string,
+      public readonly originalError: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Vendor API error from ${vendorType}`);
+      this.name = 'VendorError';
+    }
+  }
+  return { VendorError };
+});
+
 // Replace mspTechMutationProcedure with mspTechProcedure so the
 // idempotency guard (which cannot access `input` via createCaller in
 // tRPC v11) is bypassed. RBAC is still enforced via mspTechProcedure.
@@ -87,6 +109,7 @@ vi.mock('@/server/trpc/init', async () => {
 
 import { TRPCError } from '@trpc/server';
 import { writeAuditLog } from '@/lib/audit';
+import { getAdapter, decryptCredentials } from '@/adapters';
 import { licenseRouter } from '../license';
 
 // ──────────────────────────────────────────────
@@ -178,8 +201,14 @@ function makeMockLicense(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2024-01-01'),
     subscription: {
       id: VALID_CUID_2,
+      externalId: 'ext-sub-001',
       commitmentEndDate: null,
       bundle: { id: 'bundle-1', name: 'Microsoft 365 Business Basic' },
+      vendorConnection: {
+        id: 'vc-1',
+        vendorType: 'PAX8',
+        credentials: 'encrypted-creds',
+      },
     },
     productOffering: {
       id: VALID_CUID_3,
@@ -902,8 +931,14 @@ describe('licenseRouter', () => {
         inngestRunId: null,
         subscription: {
           id: VALID_CUID_2,
+          externalId: 'ext-sub-001',
           commitmentEndDate: null,
           bundle: { id: 'bundle-1', name: 'Microsoft 365 Business Basic' },
+          vendorConnection: {
+            id: 'vc-1',
+            vendorType: 'PAX8',
+            credentials: 'encrypted-creds',
+          },
           ...overrides.subscription,
         },
         ...overrides.license,

@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { router, orgMemberProcedure, mspTechMutationProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, offeringUnavailableError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
+import { createBusinessError, offeringUnavailableError, pendingScaleDownExistsError, quantityOutOfRangeError, vendorUpstreamError } from '@/lib/errors';
+import { getAdapter, decryptCredentials } from '@/adapters';
+import { VendorError } from '@/adapters/types';
 import { inngest } from '@/inngest/client';
 import Decimal from 'decimal.js';
 
@@ -109,7 +111,7 @@ export const licenseRouter = router({
 
       const license = await findOrgScopedLicense(ctx.db, input.licenseId, {
         productOffering: true,
-        subscription: true,
+        subscription: { include: { vendorConnection: true } },
       });
 
       if (!license) {
@@ -135,6 +137,19 @@ export const licenseRouter = router({
           license.productOffering.maxQuantity,
           input.newQuantity,
         );
+      }
+
+      // Call vendor API to update quantity BEFORE local record update.
+      // If the vendor rejects, we throw and local state stays consistent.
+      try {
+        const adapter = getAdapter(license.subscription.vendorConnection.vendorType);
+        const credentials = decryptCredentials(license.subscription.vendorConnection.credentials);
+        await adapter.setQuantity(credentials, license.subscription.externalId, input.newQuantity);
+      } catch (error) {
+        if (error instanceof VendorError) {
+          throw vendorUpstreamError(license.subscription.vendorConnection.vendorType);
+        }
+        throw error;
       }
 
       const before = { quantity: license.quantity };
@@ -191,7 +206,7 @@ export const licenseRouter = router({
 
       const license = await findOrgScopedLicense(ctx.db, input.licenseId, {
         productOffering: true,
-        subscription: true,
+        subscription: { include: { vendorConnection: true } },
       });
 
       if (!license) {
@@ -264,7 +279,18 @@ export const licenseRouter = router({
         };
       }
 
-      // Immediate scale-down
+      // Immediate scale-down — call vendor API before local update
+      try {
+        const adapter = getAdapter(license.subscription.vendorConnection.vendorType);
+        const credentials = decryptCredentials(license.subscription.vendorConnection.credentials);
+        await adapter.setQuantity(credentials, license.subscription.externalId, input.newQuantity);
+      } catch (error) {
+        if (error instanceof VendorError) {
+          throw vendorUpstreamError(license.subscription.vendorConnection.vendorType);
+        }
+        throw error;
+      }
+
       const updated = await prisma.license.update({
         where: { id: license.id },
         data: { quantity: input.newQuantity },
