@@ -212,6 +212,7 @@ export const subscriptionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const subscription = await ctx.db.subscription.findFirst({
         where: { id: input.subscriptionId },
+        include: { vendorConnection: true },
       });
 
       if (!subscription) {
@@ -246,7 +247,18 @@ export const subscriptionRouter = router({
         return { subscription: updated, scheduledDate: subscription.commitmentEndDate };
       }
 
-      // Immediate cancellation
+      // Immediate cancellation — cancel on vendor first, then update locally.
+      const adapter = getAdapter(subscription.vendorConnection.vendorType);
+      const credentials = decryptCredentials(subscription.vendorConnection.credentials);
+      try {
+        await adapter.cancelSubscription(credentials, subscription.externalId);
+      } catch (error: unknown) {
+        if (error instanceof VendorError) {
+          throw vendorUpstreamError(subscription.vendorConnection.vendorType);
+        }
+        throw error;
+      }
+
       const updated = await ctx.db.subscription.update({
         where: { id: subscription.id },
         data: { status: 'CANCELLED' },
