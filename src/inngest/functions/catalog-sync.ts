@@ -56,6 +56,7 @@ export const catalogSync = inngest.createFunction(
 
           // Persist catalog entries as Bundle + ProductOffering records.
           // These are NOT org-scoped models, so we use raw prisma (not the RLS proxy).
+          const syncedAt = new Date();
           let persisted = 0;
           for (const entry of catalog) {
             const bundle = await prisma.bundle.upsert({
@@ -89,7 +90,7 @@ export const catalogSync = inngest.createFunction(
                 availability: entry.availability,
                 minQuantity: entry.minQuantity ?? null,
                 maxQuantity: entry.maxQuantity ?? null,
-                lastPricingFetchedAt: new Date(),
+                lastPricingFetchedAt: syncedAt,
               },
               update: {
                 vendorConnectionId: connection.id,
@@ -98,7 +99,7 @@ export const catalogSync = inngest.createFunction(
                 availability: entry.availability,
                 minQuantity: entry.minQuantity ?? null,
                 maxQuantity: entry.maxQuantity ?? null,
-                lastPricingFetchedAt: new Date(),
+                lastPricingFetchedAt: syncedAt,
               },
             });
 
