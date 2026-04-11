@@ -107,6 +107,72 @@ function DpaStatusCard({ dpaStatus }: { dpaStatus: DpaStatusData }) {
   );
 }
 
+// ---------- Contract Status Card ----------
+
+function ContractStatusCard() {
+  const utils = api.useUtils();
+
+  const { data: contractStatus } = api.organization.getContractStatus.useQuery({});
+  const signContractMutation = api.organization.signContract.useMutation({
+    onSuccess: () => {
+      void utils.organization.getContractStatus.invalidate();
+    },
+  });
+
+  const isSigned = contractStatus?.isContractSigned ?? false;
+
+  return (
+    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+      <h2 className="text-lg font-semibold text-white mb-4">Contract Status</h2>
+      <div className="flex items-center gap-3 mb-3">
+        <span
+          className={`w-3 h-3 rounded-full ${isSigned ? 'bg-green-400' : 'bg-yellow-400'}`}
+          aria-hidden="true"
+        />
+        <span className="text-slate-300">
+          {isSigned ? 'Signed' : 'Unsigned'}
+        </span>
+      </div>
+      {isSigned ? (
+        <div className="space-y-1 text-sm text-slate-400">
+          <p>Contract signed. Provisioning is enabled.</p>
+        </div>
+      ) : (
+        <div>
+          <p className="text-sm text-slate-400 mt-2 mb-4">
+            Contract signing is required before provisioning can be enabled.
+          </p>
+
+          {signContractMutation.isError && (
+            <div className="mb-3 p-3 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm" role="alert">
+              {signContractMutation.error.message}
+            </div>
+          )}
+
+          {signContractMutation.isSuccess && (
+            <div className="mb-3 p-3 rounded-lg bg-green-900/30 border border-green-700 text-green-300 text-sm" role="status">
+              Contract signed successfully. Provisioning is now enabled.
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              signContractMutation.mutate({
+                idempotencyKey: crypto.randomUUID(),
+              });
+            }}
+            disabled={signContractMutation.isPending}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg text-white text-sm font-medium transition"
+          >
+            {signContractMutation.isPending ? 'Signing…' : 'Sign Contract'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Main ComplianceClient component ----------
 
 export function ComplianceClient({ dpaStatus, initialAuditLogs, initialNextCursor }: ComplianceClientProps) {
@@ -147,16 +213,7 @@ export function ComplianceClient({ dpaStatus, initialAuditLogs, initialNextCurso
       {/* Status Cards */}
       <div className="grid md:grid-cols-2 gap-6 mb-8">
         <DpaStatusCard dpaStatus={dpaStatus} />
-        <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-          <h2 className="text-lg font-semibold text-white mb-4">Contract Status</h2>
-          <div className="flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-yellow-400" aria-hidden="true" />
-            <span className="text-slate-300">Unsigned</span>
-          </div>
-          <p className="text-sm text-slate-400 mt-2">
-            Contract signing is required before provisioning can be enabled.
-          </p>
-        </div>
+        <ContractStatusCard />
       </div>
 
       {/* Audit Log Table */}

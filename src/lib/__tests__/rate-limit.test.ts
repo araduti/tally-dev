@@ -171,14 +171,15 @@ describe('checkRateLimit', () => {
   // ── Graceful degradation ──
 
   describe('graceful degradation', () => {
-    it('returns allowed: true when redis.eval fails', async () => {
+    it('uses in-memory fallback when redis.eval fails', async () => {
       mockRedis.eval.mockRejectedValue(new Error('ECONNREFUSED'));
 
       const result = await checkRateLimit('query', 'user1:org1');
 
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(100);
-      expect(result.remaining).toBe(100);
+      // In-memory fallback counts the first request, so remaining is limit - 1
+      expect(result.remaining).toBe(99);
     });
   });
 

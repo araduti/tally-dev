@@ -23,6 +23,80 @@ const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
   auth:     { maxRequests: 10,  windowSeconds: 60 },
 } as const;
 
+// ── In-Memory Fallback ──
+// When Redis is unavailable, use an in-memory fixed-window counter so that
+// rate limiting is not silently disabled during outages.
+
+interface InMemoryEntry {
+  count: number;
+  expiresAt: number; // Unix epoch ms
+}
+
+const memoryStore = new Map<string, InMemoryEntry>();
+
+// Periodic cleanup to prevent unbounded memory growth.
+// Runs every 60 seconds. Only expires stale entries.
+const CLEANUP_INTERVAL_MS = 60_000;
+let cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+function ensureCleanupTimer() {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of memoryStore) {
+      if (entry.expiresAt <= now) {
+        memoryStore.delete(key);
+      }
+    }
+  }, CLEANUP_INTERVAL_MS);
+  // Allow Node.js to exit cleanly even if the timer is active
+  if (cleanupTimer && typeof cleanupTimer === 'object' && 'unref' in cleanupTimer) {
+    cleanupTimer.unref();
+  }
+}
+
+function checkInMemoryRateLimit(
+  scope: string,
+  identifier: string,
+  config: RateLimitConfig,
+): RateLimitResult {
+  ensureCleanupTimer();
+  const key = `ratelimit:${scope}:${identifier}`;
+  const now = Date.now();
+
+  const entry = memoryStore.get(key);
+
+  if (!entry || entry.expiresAt <= now) {
+    // Start a new window
+    memoryStore.set(key, {
+      count: 1,
+      expiresAt: now + config.windowSeconds * 1000,
+    });
+    return {
+      allowed: true,
+      limit: config.maxRequests,
+      remaining: config.maxRequests - 1,
+      reset: Math.floor(now / 1000) + config.windowSeconds,
+    };
+  }
+
+  entry.count += 1;
+  const remaining = Math.max(config.maxRequests - entry.count, 0);
+  const allowed = entry.count <= config.maxRequests;
+  const reset = Math.floor(entry.expiresAt / 1000);
+
+  return { allowed, limit: config.maxRequests, remaining, reset };
+}
+
+// ── Test Helpers ──
+
+/**
+ * Clears the in-memory rate limit store. Only for use in tests.
+ */
+export function _resetInMemoryStore(): void {
+  memoryStore.clear();
+}
+
 // ── Public API ──
 
 /**
@@ -31,8 +105,8 @@ const RATE_LIMIT_CONFIGS: Record<string, RateLimitConfig> = {
  * Uses a fixed-window counter backed by Redis INCR + EXPIRE.
  * Redis key pattern: `ratelimit:{scope}:{identifier}`
  *
- * On Redis failure the function returns `allowed: true` so that a Redis
- * outage never blocks legitimate traffic (graceful degradation).
+ * On Redis failure the function falls back to an in-memory counter so that
+ * rate limiting remains active even during Redis outages.
  */
 export async function checkRateLimit(
   scope: 'query' | 'mutation' | 'auth',
@@ -62,12 +136,7 @@ export async function checkRateLimit(
 
     return { allowed, limit: config.maxRequests, remaining, reset };
   } catch {
-    // Graceful degradation: if Redis is unavailable, allow the request
-    return {
-      allowed: true,
-      limit: config.maxRequests,
-      remaining: config.maxRequests,
-      reset: Math.floor(Date.now() / 1000) + config.windowSeconds,
-    };
+    // Fallback: use in-memory rate limiting instead of silently disabling
+    return checkInMemoryRateLimit(scope, identifier, config);
   }
 }

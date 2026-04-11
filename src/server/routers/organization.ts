@@ -328,6 +328,124 @@ export const organizationRouter = router({
       };
     }),
 
+  getContractStatus: orgMemberProcedure
+    .input(z.object({}))
+    .query(async ({ ctx }) => {
+      const org = await ctx.db.organization.findUnique({
+        where: { id: ctx.organizationId! },
+        select: { isContractSigned: true, provisioningEnabled: true },
+      });
+
+      if (!org) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ORGANIZATION:LIFECYCLE:NOT_FOUND',
+        });
+      }
+
+      return {
+        isContractSigned: org.isContractSigned,
+        provisioningEnabled: org.provisioningEnabled,
+      };
+    }),
+
+  signContract: orgOwnerMutationProcedure
+    .input(z.object({
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx }) => {
+      const org = await ctx.db.organization.findUnique({
+        where: { id: ctx.organizationId! },
+        select: { id: true, isContractSigned: true, provisioningEnabled: true },
+      });
+
+      if (!org) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Organization not found',
+          errorCode: 'ORGANIZATION:LIFECYCLE:NOT_FOUND',
+        });
+      }
+
+      if (org.isContractSigned) {
+        // Idempotent — already signed
+        return {
+          organization: {
+            id: org.id,
+            isContractSigned: true,
+            provisioningEnabled: org.provisioningEnabled,
+          },
+        };
+      }
+
+      // Sign the contract and enable provisioning
+      const updated = await ctx.db.organization.update({
+        where: { id: ctx.organizationId! },
+        data: {
+          isContractSigned: true,
+          provisioningEnabled: true,
+        },
+        select: { id: true, isContractSigned: true, provisioningEnabled: true },
+      });
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'organization.contract_signed',
+        entityId: org.id,
+        before: { isContractSigned: false, provisioningEnabled: org.provisioningEnabled },
+        after: { isContractSigned: true, provisioningEnabled: true },
+        traceId: ctx.traceId,
+      });
+
+      return {
+        organization: {
+          id: updated.id,
+          isContractSigned: updated.isContractSigned,
+          provisioningEnabled: updated.provisioningEnabled,
+        },
+      };
+    }),
+
+  saveOnboardingSelections: authenticatedMutationProcedure
+    .input(z.object({
+      selectedVendors: z.array(z.string().min(1)),
+      intent: z.enum(['analyze', 'buy']),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { prisma } = await import('@/lib/db');
+
+      // Find the user's active organization or first org they belong to
+      const session = await prisma.session.findFirst({
+        where: { userId: ctx.userId },
+        orderBy: { updatedAt: 'desc' },
+        select: { activeOrganizationId: true },
+      });
+
+      const orgId = session?.activeOrganizationId ?? ctx.organizationId;
+
+      if (orgId) {
+        // Persist onboarding selections as organization metadata
+        await prisma.organization.update({
+          where: { id: orgId },
+          data: {
+            metadata: {
+              onboarding: {
+                selectedVendors: input.selectedVendors,
+                intent: input.intent,
+                completedAt: new Date().toISOString(),
+              },
+            },
+          },
+        });
+      }
+
+      return { success: true as const };
+    }),
+
   getDpaStatus: orgMemberProcedure
     .input(z.object({}))
     .query(async ({ ctx }) => {

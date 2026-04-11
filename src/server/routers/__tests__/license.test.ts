@@ -70,6 +70,7 @@ vi.mock('@/lib/redis', () => ({
   redis: {
     get: vi.fn().mockResolvedValue(null),
     setex: vi.fn().mockResolvedValue('OK'),
+    eval: vi.fn().mockResolvedValue([1, 60]),
   },
   IDEMPOTENCY_TTL: 86400,
 }));
