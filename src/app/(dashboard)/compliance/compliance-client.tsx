@@ -36,6 +36,14 @@ export interface ComplianceClientProps {
 // ---------- DPA Status Card ----------
 
 function DpaStatusCard({ dpaStatus }: { dpaStatus: DpaStatusData }) {
+  const utils = api.useUtils();
+
+  const acceptDpaMutation = api.organization.acceptDpa.useMutation({
+    onSuccess: () => {
+      void utils.organization.getDpaStatus.invalidate();
+    },
+  });
+
   return (
     <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
       <h2 className="text-lg font-semibold text-white mb-4">DPA Status</h2>
@@ -63,9 +71,37 @@ function DpaStatusCard({ dpaStatus }: { dpaStatus: DpaStatusData }) {
         </div>
       )}
       {!dpaStatus.accepted && (
-        <p className="text-sm text-slate-400 mt-2">
-          Accept the Data Processing Agreement to enable vendor connections and purchasing.
-        </p>
+        <div>
+          <p className="text-sm text-slate-400 mt-2 mb-4">
+            Accept the Data Processing Agreement to enable vendor connections and purchasing.
+          </p>
+
+          {acceptDpaMutation.isError && (
+            <div className="mb-3 p-3 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm" role="alert">
+              {acceptDpaMutation.error.message}
+            </div>
+          )}
+
+          {acceptDpaMutation.isSuccess && (
+            <div className="mb-3 p-3 rounded-lg bg-green-900/30 border border-green-700 text-green-300 text-sm" role="status">
+              DPA accepted successfully.
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              acceptDpaMutation.mutate({
+                version: '2024-01',
+                idempotencyKey: crypto.randomUUID(),
+              });
+            }}
+            disabled={acceptDpaMutation.isPending}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg text-white text-sm font-medium transition"
+          >
+            {acceptDpaMutation.isPending ? 'Accepting…' : 'Accept DPA (v2024-01)'}
+          </button>
+        </div>
       )}
     </div>
   );

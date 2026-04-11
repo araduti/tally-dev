@@ -8,6 +8,7 @@ const navigation = [
   { name: 'Marketplace', href: '/marketplace', icon: '🛒' },
   { name: 'Licenses', href: '/licenses', icon: '📋' },
   { name: 'Subscriptions', href: '/subscriptions', icon: '📦' },
+  { name: 'Billing', href: '/billing', icon: '💳' },
   { name: 'Compliance', href: '/compliance', icon: '🔒' },
   { name: 'Settings', href: '/settings', icon: '⚙️' },
 ];

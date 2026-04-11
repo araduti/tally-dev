@@ -32,10 +32,11 @@ function SettingsLoadingSkeleton() {
 }
 
 async function SettingsContent() {
-  const [orgResult, connectionsResult, membersResult] = await Promise.allSettled([
+  const [orgResult, connectionsResult, membersResult, invitationsResult] = await Promise.allSettled([
     api.organization.get({}),
     api.vendor.listConnections({}),
     api.admin.listMembers({}),
+    api.admin.listInvitations({}),
   ]);
 
   // Serialize organization
@@ -47,6 +48,7 @@ async function SettingsContent() {
       name: org.name,
       slug: org.slug,
       logo: org.logo ?? null,
+      organizationType: org.organizationType ?? null,
     };
   }
 
@@ -80,11 +82,26 @@ async function SettingsContent() {
     }));
   }
 
+  // Serialize invitations
+  let serializedInvitations: any[] = [];
+  if (invitationsResult.status === 'fulfilled') {
+    serializedInvitations = invitationsResult.value.items.map((item: any) => ({
+      id: item.id,
+      email: item.email,
+      orgRole: item.orgRole ?? null,
+      mspRole: item.mspRole ?? null,
+      status: item.status,
+      expiresAt: item.expiresAt instanceof Date ? item.expiresAt.toISOString() : item.expiresAt,
+      createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    }));
+  }
+
   return (
     <SettingsClient
       initialOrganization={serializedOrg}
       initialConnections={serializedConnections}
       initialMembers={serializedMembers}
+      initialInvitations={serializedInvitations}
     />
   );
 }
