@@ -1,8 +1,12 @@
+import { Pool } from "pg";
+import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { Decimal } from "decimal.js";
 import { hashPassword } from "better-auth/crypto";
 
-const prisma = new PrismaClient();
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool as any);
+const prisma = new PrismaClient({ adapter });
 
 const ADMIN_EMAIL = "admin@tally.dev";
 const ADMIN_PASSWORD = "admin123";
