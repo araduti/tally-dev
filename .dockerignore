@@ -1,0 +1,40 @@
+# Dependencies
+node_modules
+
+# Build output
+.next
+out
+
+# Version control
+.git
+.gitignore
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test & CI artifacts
+coverage
+test-results
+playwright-report
+
+# Documentation
+docs
+*.md
+!README.md
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
