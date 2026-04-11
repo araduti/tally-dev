@@ -482,6 +482,12 @@ export const adminRouter = router({
         action: z.string().min(1).optional(),
         entityId: z.string().cuid().optional(),
         userId: z.string().cuid().optional(),
+        /** Filter to a specific entity type (domain prefix, e.g. "subscription", "license") */
+        entityType: z.string().min(1).optional(),
+        /** Inclusive start of the date range */
+        from: z.coerce.date().optional(),
+        /** Inclusive end of the date range */
+        to: z.coerce.date().optional(),
       }).optional(),
       orderBy: z.object({
         field: z.enum(['createdAt']),
@@ -493,6 +499,19 @@ export const adminRouter = router({
       if (input.where?.action) where.action = { contains: input.where.action };
       if (input.where?.entityId) where.entityId = input.where.entityId;
       if (input.where?.userId) where.userId = input.where.userId;
+
+      // Entity-type filtering: matches the domain prefix of the action (e.g. "subscription.*")
+      if (input.where?.entityType) {
+        where.action = { startsWith: `${input.where.entityType}.` };
+      }
+
+      // Date-range filtering
+      if (input.where?.from || input.where?.to) {
+        const dateFilter: Record<string, Date> = {};
+        if (input.where.from) dateFilter.gte = input.where.from;
+        if (input.where.to) dateFilter.lte = input.where.to;
+        where.createdAt = dateFilter;
+      }
 
       const orderBy = input.orderBy
         ? { [input.orderBy.field]: input.orderBy.direction }

@@ -58,11 +58,13 @@ async function ComplianceContent() {
   // Parse DPA status — serialize acceptedAt to ISO string and acceptedBy to display name
   const rawDpa = dpaResult.status === 'fulfilled'
     ? dpaResult.value
-    : { accepted: false, version: null, acceptedAt: null, acceptedBy: null };
+    : { accepted: false, requiredVersion: '1.0', acceptedVersion: null, isOutdated: true, acceptedAt: null, acceptedBy: null };
 
   const dpaStatus = {
     accepted: rawDpa.accepted,
-    version: rawDpa.version,
+    version: rawDpa.acceptedVersion,
+    requiredVersion: rawDpa.requiredVersion,
+    isOutdated: rawDpa.isOutdated,
     acceptedAt: rawDpa.acceptedAt instanceof Date
       ? rawDpa.acceptedAt.toISOString()
       : rawDpa.acceptedAt,

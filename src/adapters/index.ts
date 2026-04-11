@@ -7,24 +7,23 @@ import { ingramAdapter } from './ingram';
 import { tdSynnexAdapter } from './tdsynnex';
 import { directAdapter } from './direct';
 
-// Adapter registry — add new adapters here
-const adapters: Partial<Record<VendorType, VendorAdapter>> = {
+// Adapter registry — add new adapters here.
+// Uses Record<VendorType, …> (not Partial) so the compiler enforces that
+// every VendorType enum value has a registered adapter at compile time.
+const adapters: Record<VendorType, VendorAdapter> = {
   PAX8: pax8Adapter,
   INGRAM: ingramAdapter,
   TDSYNNEX: tdSynnexAdapter,
   DIRECT: directAdapter,
-};
+} satisfies Record<VendorType, VendorAdapter>;
 
 /**
  * Returns the adapter for the given vendor type.
- * Throws if no adapter is registered.
+ * Because the registry is a full Record<VendorType, VendorAdapter>, this
+ * is guaranteed at compile time to return a valid adapter for any VendorType.
  */
 export function getAdapter(vendorType: VendorType): VendorAdapter {
-  const adapter = adapters[vendorType];
-  if (!adapter) {
-    throw new VendorError(vendorType, null, `No adapter registered for vendor type: ${vendorType}`);
-  }
-  return adapter;
+  return adapters[vendorType];
 }
 
 /**

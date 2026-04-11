@@ -331,6 +331,11 @@ export const organizationRouter = router({
   getDpaStatus: orgMemberProcedure
     .input(z.object({}))
     .query(async ({ ctx }) => {
+      // The current required DPA version. In production this would be
+      // sourced from a config table or environment variable, but for now
+      // it is hardcoded to a single value so the client can compare.
+      const REQUIRED_DPA_VERSION = '1.0';
+
       const latestDpa = await ctx.db.dpaAcceptance.findFirst({
         where: {
           organizationId: ctx.organizationId!,
@@ -352,15 +357,21 @@ export const organizationRouter = router({
       if (!latestDpa) {
         return {
           accepted: false,
-          version: null,
+          requiredVersion: REQUIRED_DPA_VERSION,
+          acceptedVersion: null,
+          isOutdated: true,
           acceptedAt: null,
           acceptedBy: null,
         };
       }
 
+      const isOutdated = latestDpa.version !== REQUIRED_DPA_VERSION;
+
       return {
         accepted: true,
-        version: latestDpa.version,
+        requiredVersion: REQUIRED_DPA_VERSION,
+        acceptedVersion: latestDpa.version,
+        isOutdated,
         acceptedAt: latestDpa.acceptedAt,
         acceptedBy: latestDpa.acceptedBy,
       };
@@ -396,19 +407,55 @@ export const organizationRouter = router({
       }
 
       const now = new Date();
+      const orgId = ctx.organizationId!;
 
-      const updated = await ctx.db.organization.update({
-        where: { id: ctx.organizationId! },
-        data: { deletedAt: now },
-        select: {
-          id: true,
-          deletedAt: true,
-        },
+      // Cancel active subscriptions, revoke pending invitations,
+      // erase vendor credentials, and soft-delete the org — all within
+      // a single transaction for consistency.
+      // Uses raw prisma (not ctx.db) because the transaction callback
+      // needs un-proxied model access — same pattern as listClients above.
+      const { prisma } = await import('@/lib/db');
+
+      await prisma.$transaction(async (tx) => {
+        // 1. Suspend all active subscriptions
+        await tx.subscription.updateMany({
+          where: { organizationId: orgId, status: 'ACTIVE' },
+          data: { status: 'SUSPENDED' },
+        });
+
+        // 2. Revoke pending invitations
+        await tx.invitation.updateMany({
+          where: { organizationId: orgId, status: 'PENDING' },
+          data: { status: 'REVOKED' },
+        });
+
+        // 3. Erase vendor connection credentials and mark as disconnected
+        await tx.vendorConnection.updateMany({
+          where: { organizationId: orgId },
+          data: { credentials: '', status: 'DISCONNECTED' },
+        });
+
+        // 4. Soft-delete the organization
+        await tx.organization.update({
+          where: { id: orgId },
+          data: { deletedAt: now },
+        });
+
+        // 5. Soft-delete child orgs (MSP clients)
+        await tx.organization.updateMany({
+          where: { parentOrganizationId: orgId, deletedAt: null },
+          data: { deletedAt: now },
+        });
+      });
+
+      const updated = await ctx.db.organization.findUnique({
+        where: { id: orgId },
+        select: { id: true, deletedAt: true },
       });
 
       await writeAuditLog({
         db: ctx.db,
-        organizationId: ctx.organizationId!,
+        organizationId: orgId,
         userId: ctx.userId,
         action: 'organization.deactivated',
         entityId: org.id,
@@ -417,7 +464,7 @@ export const organizationRouter = router({
         traceId: ctx.traceId,
       });
 
-      return { organization: { id: updated.id, deletedAt: updated.deletedAt! } };
+      return { organization: { id: updated!.id, deletedAt: updated!.deletedAt! } };
     }),
 
   acceptDpa: orgOwnerMutationProcedure

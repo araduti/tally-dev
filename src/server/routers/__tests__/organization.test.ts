@@ -822,7 +822,9 @@ describe('organizationRouter', () => {
 
       expect(result).toEqual({
         accepted: false,
-        version: null,
+        requiredVersion: '1.0',
+        acceptedVersion: null,
+        isOutdated: true,
         acceptedAt: null,
         acceptedBy: null,
       });
@@ -831,7 +833,7 @@ describe('organizationRouter', () => {
     it('returns accepted: true with correct details when DPA exists', async () => {
       const acceptedAt = new Date('2024-06-15T10:00:00Z');
       const mockDpa = {
-        version: '2024-01',
+        version: '1.0',
         acceptedAt,
         acceptedBy: {
           id: USER_ID,
@@ -847,7 +849,9 @@ describe('organizationRouter', () => {
 
       expect(result).toEqual({
         accepted: true,
-        version: '2024-01',
+        requiredVersion: '1.0',
+        acceptedVersion: '1.0',
+        isOutdated: false,
         acceptedAt,
         acceptedBy: {
           id: USER_ID,
@@ -890,32 +894,37 @@ describe('organizationRouter', () => {
   //  deactivate
   // ─────────────────────────────────────
   describe('deactivate', () => {
+    function setupDeactivateMocks() {
+      // $transaction is a top-level Prisma client method — not model-level,
+      // so the Proxy doesn't create it automatically. Set it directly.
+      prisma.$transaction = vi.fn().mockImplementation(
+        async (fn: (tx: any) => Promise<unknown>) => {
+          // Provide a mock tx with the same model proxy interface
+          const txProxy = buildDbProxy();
+          txProxy.subscription.updateMany.mockResolvedValue({ count: 0 });
+          txProxy.invitation.updateMany.mockResolvedValue({ count: 0 });
+          txProxy.vendorConnection.updateMany.mockResolvedValue({ count: 0 });
+          txProxy.organization.update.mockResolvedValue({ id: ORG_ID, deletedAt: new Date() });
+          txProxy.organization.updateMany.mockResolvedValue({ count: 0 });
+          return fn(txProxy);
+        },
+      );
+    }
+
     it('successfully soft-deletes an active organization', async () => {
       const activeOrg = makeMockOrg({ deletedAt: null });
       const now = new Date();
 
-      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
-      rlsDb.organization.update.mockResolvedValue({
-        id: ORG_ID,
-        deletedAt: now,
-      });
+      rlsDb.organization.findUnique
+        .mockResolvedValueOnce(activeOrg)   // first call: check org exists
+        .mockResolvedValueOnce({ id: ORG_ID, deletedAt: now }); // second call: re-fetch after tx
+      setupDeactivateMocks();
 
       const caller = createAuthedCaller('ORG_OWNER');
       const result = await caller.deactivate({ idempotencyKey: VALID_UUID });
 
       expect(result.organization.id).toBe(ORG_ID);
       expect(result.organization.deletedAt).toEqual(now);
-
-      expect(rlsDb.organization.findUnique).toHaveBeenCalledWith({
-        where: { id: ORG_ID },
-        select: { id: true, deletedAt: true },
-      });
-
-      expect(rlsDb.organization.update).toHaveBeenCalledWith({
-        where: { id: ORG_ID },
-        data: { deletedAt: expect.any(Date) },
-        select: { id: true, deletedAt: true },
-      });
     });
 
     it('throws NOT_FOUND when organization does not exist', async () => {
@@ -942,11 +951,10 @@ describe('organizationRouter', () => {
     it('writes audit log on successful deactivation', async () => {
       const activeOrg = makeMockOrg({ deletedAt: null });
 
-      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
-      rlsDb.organization.update.mockResolvedValue({
-        id: ORG_ID,
-        deletedAt: new Date(),
-      });
+      rlsDb.organization.findUnique
+        .mockResolvedValueOnce(activeOrg)
+        .mockResolvedValueOnce({ id: ORG_ID, deletedAt: new Date() });
+      setupDeactivateMocks();
 
       const caller = createAuthedCaller('ORG_OWNER');
       await caller.deactivate({ idempotencyKey: VALID_UUID });
@@ -968,11 +976,10 @@ describe('organizationRouter', () => {
       const activeOrg = makeMockOrg({ deletedAt: null });
       const deactivatedAt = new Date('2025-01-15T08:30:00Z');
 
-      rlsDb.organization.findUnique.mockResolvedValue(activeOrg);
-      rlsDb.organization.update.mockResolvedValue({
-        id: ORG_ID,
-        deletedAt: deactivatedAt,
-      });
+      rlsDb.organization.findUnique
+        .mockResolvedValueOnce(activeOrg)
+        .mockResolvedValueOnce({ id: ORG_ID, deletedAt: deactivatedAt });
+      setupDeactivateMocks();
 
       const caller = createAuthedCaller('ORG_OWNER');
       const result = await caller.deactivate({ idempotencyKey: VALID_UUID });

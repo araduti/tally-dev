@@ -6,6 +6,17 @@ export default defineConfig({
     include: ['src/**/__tests__/**/*.test.ts'],
     environment: 'node',
     globals: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'lcov', 'json-summary'],
+      reportsDirectory: './coverage',
+      include: ['src/**/*.ts'],
+      exclude: [
+        'src/**/__tests__/**',
+        'src/**/*.test.ts',
+        'src/**/*.d.ts',
+      ],
+    },
   },
   resolve: {
     alias: {

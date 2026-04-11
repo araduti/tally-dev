@@ -1,0 +1,71 @@
+import { z } from 'zod';
+
+/**
+ * Runtime environment variable validation.
+ *
+ * Import this module at application startup to ensure all required
+ * environment variables are present and correctly shaped. Missing or
+ * invalid values will cause an immediate, descriptive error rather than
+ * a cryptic failure at an arbitrary point later.
+ */
+
+const envSchema = z.object({
+  // ── Database ──
+  DATABASE_URL: z
+    .string()
+    .min(1, 'DATABASE_URL is required')
+    .regex(/^postgres(ql)?:\/\//, 'DATABASE_URL must be a PostgreSQL connection string'),
+
+  // ── Redis ──
+  REDIS_URL: z
+    .string()
+    .min(1, 'REDIS_URL is required'),
+
+  // ── Garage (S3-compatible storage) ──
+  GARAGE_ENDPOINT: z.string().min(1, 'GARAGE_ENDPOINT is required'),
+  GARAGE_ACCESS_KEY: z.string().min(1, 'GARAGE_ACCESS_KEY is required'),
+  GARAGE_SECRET_KEY: z.string().min(1, 'GARAGE_SECRET_KEY is required'),
+
+  // ── Encryption ──
+  ENCRYPTION_KEY: z
+    .string()
+    .length(64, 'ENCRYPTION_KEY must be a 64-character hex string (32 bytes)')
+    .regex(/^[0-9a-fA-F]+$/, 'ENCRYPTION_KEY must be valid hexadecimal'),
+
+  // ── Auth ──
+  BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
+  BETTER_AUTH_URL: z.string().url('BETTER_AUTH_URL must be a valid URL'),
+
+  // ── Inngest ──
+  INNGEST_EVENT_KEY: z.string().min(1, 'INNGEST_EVENT_KEY is required'),
+  INNGEST_SIGNING_KEY: z.string().min(1, 'INNGEST_SIGNING_KEY is required'),
+
+  // ── Optional ──
+  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+});
+
+export type Env = z.infer<typeof envSchema>;
+
+/**
+ * Validates environment variables and returns the parsed result.
+ * Call this at application startup (e.g. in instrumentation.ts or a
+ * top-level server module).
+ *
+ * @throws {Error} with descriptive messages for all validation failures
+ */
+export function validateEnv(): Env {
+  const result = envSchema.safeParse(process.env);
+
+  if (!result.success) {
+    const formatted = result.error.issues
+      .map((issue) => `  • ${issue.path.join('.')}: ${issue.message}`)
+      .join('\n');
+
+    throw new Error(
+      `❌ Environment validation failed:\n${formatted}\n\n` +
+      'Copy .env.example to .env and fill in the required values.',
+    );
+  }
+
+  return result.data;
+}
