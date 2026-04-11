@@ -163,6 +163,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return vendorRouter.createCaller(ctx);
 }

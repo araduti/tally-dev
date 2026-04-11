@@ -139,6 +139,7 @@ function createTestContext(overrides: Record<string, any> = {}) {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
     ...overrides,
   };
 }

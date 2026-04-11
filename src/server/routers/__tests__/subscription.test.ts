@@ -196,6 +196,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return subscriptionRouter.createCaller(ctx);
 }
@@ -579,7 +580,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('SUBSCRIPTION:LIFECYCLE:NOT_FOUND');
       }
     });
@@ -828,7 +829,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('COMPLIANCE:DPA:NOT_ACCEPTED');
       }
     });
@@ -902,7 +903,7 @@ describe('subscriptionRouter', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
         expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('CATALOG:OFFERING:PRICE_MISSING');
         expect(cause.recovery).toEqual(
           expect.objectContaining({ action: 'FORCE_SYNC' }),
@@ -963,7 +964,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
         const recovery = cause.recovery as Record<string, unknown>;
         expect(recovery.params).toEqual(
@@ -1019,7 +1020,7 @@ describe('subscriptionRouter', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
         expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('VENDOR:AUTH:DISCONNECTED');
         expect(cause.recovery).toEqual(
           expect.objectContaining({
@@ -1330,7 +1331,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('SUBSCRIPTION:LIFECYCLE:NOT_FOUND');
       }
     });

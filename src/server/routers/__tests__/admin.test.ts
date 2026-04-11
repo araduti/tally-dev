@@ -165,6 +165,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return adminRouter.createCaller(ctx);
 }
@@ -197,6 +198,7 @@ function createAuthOnlyCaller(email: string = 'newuser@example.com') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return adminRouter.createCaller(ctx);
 }

@@ -181,6 +181,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return licenseRouter.createCaller(ctx);
 }
@@ -568,7 +569,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:NOT_FOUND');
       }
     });
@@ -779,7 +780,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
       }
     });
@@ -1140,7 +1141,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
       }
     });
@@ -1212,7 +1213,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:SCALE_DOWN:PENDING');
       }
     });
@@ -1235,7 +1236,7 @@ describe('licenseRouter', () => {
         });
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         const recovery = cause.recovery as Record<string, unknown>;
         expect(recovery.action).toBe('REVIEW_QUEUE');
         expect(recovery.params).toEqual(
@@ -1441,7 +1442,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:SCALE_DOWN:NO_PENDING');
       }
     });

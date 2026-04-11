@@ -133,6 +133,7 @@ function createTestContext(overrides: Record<string, any> = {}) {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
     ...overrides,
   };
 }
@@ -480,7 +481,7 @@ describe('catalogRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('CATALOG:OFFERING:UNAVAILABLE');
       }
     });
