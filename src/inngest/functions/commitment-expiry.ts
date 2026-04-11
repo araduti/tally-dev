@@ -36,8 +36,8 @@ export const commitmentExpiry = inngest.createFunction(
           include: { vendorConnection: true },
         });
 
-        // Idempotent: early return if subscription not found, already cancelled, or no longer suspended
-        if (!subscription || subscription.status === 'CANCELLED' || subscription.status !== 'SUSPENDED') {
+        // Idempotent: early return if subscription not found or no longer SUSPENDED
+        if (!subscription || subscription.status !== 'SUSPENDED') {
           return;
         }
 
