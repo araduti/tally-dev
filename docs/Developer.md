@@ -41,7 +41,7 @@ Before starting, ensure the following are installed:
 |---|---|
 | Framework | Next.js 16.2 (App Router, RSC, Turbopack) |
 | Auth | Better Auth 1.6.x (Organization plugin) |
-| API | tRPC v11 + Zod v4 |
+| API | tRPC v11 + Zod v3 |
 | Database | PostgreSQL 18 + Prisma ORM 7.7 |
 | Background Jobs | Inngest |
 | Storage | Garage (S3-compatible) & Redis |
@@ -120,14 +120,15 @@ All variables are defined in `.env.example`. Copy it to `.env` and fill in value
 | `BETTER_AUTH_SECRET` | Session signing secret | Random 32+ char string |
 | `INNGEST_EVENT_KEY` | Inngest event key | `local` for dev server |
 | `INNGEST_SIGNING_KEY` | Inngest signing key | `local` for dev server |
+| `BETTER_AUTH_URL` | Better Auth base URL | `http://localhost:3000` |
 
 ---
 
 ## 5. Coding Standards
 
-### 5.1 The Trust Boundary — `proxy.ts`
+### 5.1 The Trust Boundary — `src/server/trpc/init.ts`
 
-`proxy.ts` is the single entry point for all authenticated requests. It validates the session, extracts `organizationId`, and enforces idempotency.
+`src/server/trpc/init.ts` is the single entry point for all authenticated requests. It validates the session, extracts `organizationId`, and enforces idempotency.
 
 **Never instantiate `PrismaClient` directly.** Always use the RLS-wrapped proxy from tRPC context:
 
@@ -156,7 +157,7 @@ const total = price * quantity;
 
 ### 5.3 Idempotency
 
-Every tRPC mutation must validate an `Idempotency-Key`. The key is provided by the client and checked in `proxy.ts`. If the key has been seen before, the cached response is returned without re-executing the handler.
+Every tRPC mutation must validate an `idempotencyKey` input field. The key is provided by the client in the mutation input and checked by the `idempotencyGuard` middleware in `src/server/trpc/init.ts`. If the key has been seen before, the cached response is returned without re-executing the handler.
 
 ### 5.4 Background Jobs
 
@@ -185,7 +186,7 @@ Never write to a path without this prefix — it would allow cross-org data acce
 
 ### 5.6 RBAC & Role Checks
 
-Role resolution is handled at `proxy.ts` — tRPC procedures receive a resolved `effectiveRole` in context. Never re-query the database to check roles inside a procedure.
+Role resolution is handled at `src/server/trpc/init.ts` — tRPC procedures receive a resolved `effectiveRole` in context. Never re-query the database to check roles inside a procedure.
 
 **Checking roles in a tRPC procedure:**
 
