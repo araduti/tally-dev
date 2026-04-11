@@ -14,7 +14,7 @@ const envSchema = z.object({
   DATABASE_URL: z
     .string()
     .min(1, 'DATABASE_URL is required')
-    .startsWith('postgresql://', 'DATABASE_URL must be a PostgreSQL connection string'),
+    .regex(/^postgres(ql)?:\/\//, 'DATABASE_URL must be a PostgreSQL connection string'),
 
   // ── Redis ──
   REDIS_URL: z

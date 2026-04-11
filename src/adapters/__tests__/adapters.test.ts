@@ -125,14 +125,14 @@ describe('directAdapter', () => {
     });
 
     it('includes DIRECT vendorType in the error', async () => {
-      try {
-        await directAdapter.setQuantity(creds, 'sub-123', -5);
-        expect.fail('should have thrown');
-      } catch (err) {
+      await expect(
+        directAdapter.setQuantity(creds, 'sub-123', -5),
+      ).rejects.toSatisfy((err: unknown) => {
         expect(err).toBeInstanceOf(VendorError);
         expect((err as VendorError).vendorType).toBe('DIRECT');
         expect((err as VendorError).message).toMatch(/non-negative/i);
-      }
+        return true;
+      });
     });
   });
 

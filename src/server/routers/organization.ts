@@ -412,9 +412,11 @@ export const organizationRouter = router({
       // Cancel active subscriptions, revoke pending invitations,
       // erase vendor credentials, and soft-delete the org — all within
       // a single transaction for consistency.
+      // Uses raw prisma (not ctx.db) because the transaction callback
+      // needs un-proxied model access — same pattern as listClients above.
       const { prisma } = await import('@/lib/db');
 
-      await prisma.$transaction(async (tx: any) => {
+      await prisma.$transaction(async (tx) => {
         // 1. Suspend all active subscriptions
         await tx.subscription.updateMany({
           where: { organizationId: orgId, status: 'ACTIVE' },

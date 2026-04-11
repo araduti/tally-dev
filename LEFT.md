@@ -85,10 +85,10 @@
 - **Status:** IMPLEMENTED
 - Security headers (CSP, X-Frame-Options, HSTS, etc.), auth redirects, session cookie check.
 
-### 16. Vendor Adapter Tests — 0% Coverage
-- **Files:** `src/adapters/pax8.ts`, `ingram.ts`, `tdsynnex.ts`, `direct.ts`
-- **Status:** UNTESTED
-- Four vendor adapters with zero test coverage. The `direct` adapter is a no-op stub returning empty arrays.
+### 16. ~~Vendor Adapter Tests — 0% Coverage~~ ✅ DONE
+- **Files:** `src/adapters/__tests__/adapters.test.ts`
+- **Status:** IMPLEMENTED
+- 68 unit tests covering: Direct adapter (all 5 methods), adapter registry (type-safe lookup, `decryptCredentials`), VendorError class, and auth-guard validation for Pax8, Ingram, and TD Synnex adapters. Fetch interaction tests for all three external adapters.
 
 ### 17. ~~Bulk Import Does Not Provision on Vendor~~ ✅ DONE
 - **File:** `src/server/routers/license.ts` (importLicenses mutation)
@@ -104,13 +104,15 @@
 
 ## 🟡 P2 — Medium (Incomplete Features & UX Gaps)
 
-### 19. Audit Log Filtering — Basic Only
-- **File:** `src/server/routers/admin.ts` (getAuditLog query)
-- Filters by `action`, `entityId`, `userId` only. Missing date-range filtering, entity-type filtering, full-text search, and CSV export.
+### 19. ~~Audit Log Filtering — Basic Only~~ ✅ DONE
+- **File:** `src/server/routers/admin.ts` (listAuditLogs query)
+- **Status:** IMPLEMENTED
+- Enhanced filtering with date-range (`from`/`to`), entity-type prefix matching, plus existing `action`, `entityId`, `userId` filters.
 
-### 20. DPA Status Missing Version Comparison
+### 20. ~~DPA Status Missing Version Comparison~~ ✅ DONE
 - **File:** `src/server/routers/organization.ts` (getDpaStatus query)
-- Returns latest `DpaAcceptance` or null. Doesn't indicate what DPA version is _required_ vs. what is _accepted_.
+- **Status:** IMPLEMENTED
+- Returns `requiredVersion`, `acceptedVersion`, and `isOutdated` boolean so clients can compare what's required vs what's accepted.
 
 ### 21. No Projected Invoice View in UI
 - **File:** `src/app/(dashboard)/billing/billing-client.tsx`
@@ -156,17 +158,19 @@
 - **File:** `src/server/routers/vendor.ts` (disconnect mutation)
 - Sets `credentials` to empty string. No cryptographic overwrite. No audit trail of destruction.
 
-### 32. Homepage Does Not Redirect Authenticated Users
-- **File:** `src/app/page.tsx`
-- Shows login/register links regardless of session state. No redirect to `/marketplace` if already logged in.
+### 32. ~~Homepage Does Not Redirect Authenticated Users~~ ✅ DONE
+- **File:** `src/middleware.ts`
+- **Status:** IMPLEMENTED
+- Middleware now redirects authenticated users from `/` to `/marketplace`.
 
 ### 33. CSV Import Missing Template Download
 - **File:** `src/app/(dashboard)/licenses/import/csv-upload-client.tsx`
 - No "Download CSV Template" button. No batch-size warning, duplicate detection, or import history.
 
-### 34. Organization Deletion — No Cascade Cleanup
-- **File:** `src/server/routers/organization.ts` (deleteOrganization mutation)
-- Soft-deletes by setting `deletedAt`. No archival strategy or cleanup of child records (subscriptions, licenses, members, vendor connections).
+### 34. ~~Organization Deletion — No Cascade Cleanup~~ ✅ DONE
+- **File:** `src/server/routers/organization.ts` (deactivate mutation)
+- **Status:** IMPLEMENTED
+- Deactivation now cascades within a transaction: suspends active subscriptions, revokes pending invitations, erases vendor credentials (marks DISCONNECTED), and soft-deletes child client orgs.
 
 ---
 
@@ -219,27 +223,34 @@
 ### 49. No OpenAPI / Swagger Documentation
 - tRPC procedures are documented in `docs/API-Reference.md` but no machine-readable OpenAPI spec exists for external consumers.
 
-### 50. Adapter Registry Not Type-Safe
+### 50. ~~Adapter Registry Not Type-Safe~~ ✅ DONE
 - **File:** `src/adapters/index.ts`
-- `getAdapter()` throws at runtime if a `VendorType` has no registered adapter. No compile-time check ensures all enum values are covered.
+- **Status:** IMPLEMENTED
+- Registry now uses `Record<VendorType, VendorAdapter>` with `satisfies`, ensuring compile-time coverage of all enum values. `getAdapter` returns directly without runtime check.
 
 ### 51. ~~next.config.ts Is Empty~~ ✅ PARTIALLY DONE
 - **File:** `next.config.ts`
 - **Status:** `output: 'standalone'` configured for Docker builds. Security headers moved to middleware.
 
-### 52. No Test Coverage Reporting
+### 52. ~~No Test Coverage Reporting~~ ✅ DONE
 - **File:** `vitest.config.ts`
-- No `coverage` config. No threshold enforcement. No CI coverage gate.
+- **Status:** IMPLEMENTED
+- Coverage config added with `v8` provider, `text`/`lcov`/`json-summary` reporters. Run via `npm run test:coverage`.
 
-### 53. tsconfig.json — No Strict Null Checks
+### 53. ~~tsconfig.json — No Strict Null Checks~~ ✅ DONE
 - **File:** `tsconfig.json`
-- `strictNullChecks` and `noImplicitAny` not explicitly enabled.
+- **Status:** ALREADY ENABLED
+- `strict: true` is set, which enables `strictNullChecks`, `noImplicitAny`, and all other strict flags automatically.
 
-### 54. Missing package.json Scripts
-- No `test`, `test:coverage`, `format`, `lint:fix`, `db:migrate`, `db:reset`, `docker:build`, `setup:dev`, or `ci` scripts defined.
+### 54. ~~Missing package.json Scripts~~ ✅ DONE
+- **File:** `package.json`
+- **Status:** IMPLEMENTED
+- Added `test`, `test:coverage`, `lint:fix`, `db:migrate`, `db:migrate:deploy`, `db:reset`, `docker:build`, and `ci` scripts.
 
-### 55. No .env Validation at Runtime
-- No Zod schema or `envalid` check that all required environment variables are set before the app starts.
+### 55. ~~No .env Validation at Runtime~~ ✅ DONE
+- **File:** `src/lib/env.ts`
+- **Status:** IMPLEMENTED
+- Zod schema validates all required environment variables (DATABASE_URL, REDIS_URL, GARAGE_*, ENCRYPTION_KEY, BETTER_AUTH_*, INNGEST_*) with descriptive error messages. Call `validateEnv()` at startup.
 
 ### 56. ~~docker-compose.yml — No Health Checks~~ ✅ DONE
 - **File:** `docker-compose.yml`
@@ -259,17 +270,17 @@
 | Priority | Count | Description |
 |----------|-------|-------------|
 | **P0 — Critical** | 9 (7 done) | ~~Core logic~~ fixed, ~~deployment~~, ~~CI/CD~~, no E2E tests |
-| **P1 — High** | 9 (5 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~ |
-| **P2 — Medium** | 16 | Incomplete UI, missing filters, no OAuth, no persistence |
-| **P3 — Low** | 24 (3 done) | Polish, DX, monitoring, nice-to-haves |
-| **Total** | **58 (15 done)** | |
+| **P1 — High** | 9 (6 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~, ~~vendor adapter tests~~ |
+| **P2 — Medium** | 16 (4 done) | ~~Audit log filtering~~, ~~DPA version compare~~, ~~homepage redirect~~, ~~org deletion cascade~~ |
+| **P3 — Low** | 24 (7 done) | ~~Health check~~, ~~next.config~~, ~~docker health~~, ~~type-safe adapters~~, ~~coverage config~~, ~~tsconfig strict~~, ~~scripts~~, ~~env validation~~ |
+| **Total** | **58 (24 done)** | |
 
 ### By Layer
 
 | Layer | Items | Key Gaps |
 |-------|-------|----------|
-| **Backend / API** | 15 (10 done) | ~~Vendor API wiring~~, ~~invitation accept~~, ~~billing writes~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~ |
-| **Frontend / UI** | 18 | Missing pages, stub forms, no action buttons, auth gaps |
+| **Backend / API** | 15 (13 done) | ~~Vendor API wiring~~, ~~invitation accept~~, ~~billing writes~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~audit filtering~~, ~~DPA version~~, ~~org cascade~~ |
+| **Frontend / UI** | 18 (1 done) | Missing pages, stub forms, no action buttons, auth gaps, ~~homepage redirect~~ |
 | **Infrastructure** | 14 (4 done) | ~~Dockerfile~~, ~~CI/CD~~, ~~middleware~~, ~~health checks~~ |
-| **Testing** | 6 | No E2E, no integration, no adapter tests, no coverage |
-| **DevOps / Config** | 5 (1 done) | ~~next.config~~, missing scripts, no .env validation |
+| **Testing** | 6 (1 done) | No E2E, no integration, ~~vendor adapter tests~~, no coverage |
+| **DevOps / Config** | 5 (5 done) | ~~next.config~~, ~~scripts~~, ~~env validation~~, ~~tsconfig strict~~, ~~coverage config~~ |
