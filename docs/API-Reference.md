@@ -312,7 +312,7 @@ z.object({
 |---|---|
 | **Type** | `mutation` |
 | **Description** | Cancel a subscription. If within a commitment window, the cancellation is scheduled. |
-| **Minimum Role** | `ORG_OWNER` |
+| **Minimum Role** | `ORG_ADMIN` |
 | **Idempotent** | Yes — requires `Idempotency-Key` |
 
 **Input:**
@@ -541,6 +541,8 @@ Manages connections to third-party distributors (Pax8, Ingram Micro, TD Synnex, 
 
 ```typescript
 z.object({
+  cursor: z.string().cuid().optional(),
+  limit: z.number().int().min(1).max(100).default(25),
   where: z.object({
     vendorType: z.nativeEnum(VendorType).optional(),
     status: z.nativeEnum(VendorConnectionStatus).optional(),
@@ -557,8 +559,10 @@ z.object({
     vendorType: VendorType,
     status: VendorConnectionStatus,
     lastSyncAt: Date | null,
+    createdAt: Date,
     // credentials are NEVER included in output
   }>,
+  nextCursor: string | null,
 }
 ```
 
@@ -942,6 +946,84 @@ z.object({
 
 ---
 
+### `admin.listInvitations`
+
+| Field | Value |
+|---|---|
+| **Type** | `query` |
+| **Description** | List all invitations for the active organization, with optional status filtering |
+| **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` (read-only) |
+| **Idempotent** | N/A (query) |
+
+**Input:**
+
+```typescript
+z.object({
+  cursor: z.string().cuid().optional(),
+  limit: z.number().int().min(1).max(100).default(25),
+  where: z.object({
+    status: z.nativeEnum(InvitationStatus).optional(),
+  }).optional(),
+})
+```
+
+**Output:**
+
+```typescript
+{
+  items: Array<{
+    id: string,
+    email: string,
+    orgRole: OrgRole | null,
+    mspRole: MspRole | null,
+    status: InvitationStatus,
+    expiresAt: Date,
+    createdAt: Date,
+  }>,
+  nextCursor: string | null,
+}
+```
+
+---
+
+### `admin.revokeInvitation`
+
+| Field | Value |
+|---|---|
+| **Type** | `mutation` |
+| **Description** | Revoke a pending invitation. Only `PENDING` invitations can be revoked. |
+| **Minimum Role** | `ORG_OWNER` / `MSP_OWNER` |
+| **Idempotent** | Yes — requires `Idempotency-Key` |
+
+**Input:**
+
+```typescript
+z.object({
+  invitationId: z.string().cuid(),
+  idempotencyKey: z.string().uuid(),
+})
+```
+
+**Output:**
+
+```typescript
+{
+  invitation: {
+    id: string,
+    status: 'REVOKED',
+  },
+}
+```
+
+**Validation:**
+- Invitation must exist and belong to the active organization
+- Invitation must be in `PENDING` status (`INVITATION_INVALID_STATUS` error otherwise)
+
+**Side Effects:**
+- `AuditLog` entry: `admin.invitation_revoked`
+
+---
+
 ### `admin.listAuditLogs`
 
 | Field | Value |
@@ -1047,7 +1129,7 @@ z.object({
   name: z.string().min(1).max(255).optional(),
   logo: z.string().url().optional(),
   billingType: z.nativeEnum(BillingType).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   idempotencyKey: z.string().uuid(),
 })
 ```
@@ -1151,3 +1233,159 @@ z.object({
 **Preconditions:**
 - Active org must be of type `MSP`
 - Slug must be unique across all organizations
+
+---
+
+### `organization.switchOrg`
+
+| Field | Value |
+|---|---|
+| **Type** | `mutation` |
+| **Description** | Switch the active organization for the current session. Validates access through direct membership, MSP delegation, or platform admin role. |
+| **Minimum Role** | Authenticated (any role — access validated dynamically) |
+| **Idempotent** | Yes — requires `Idempotency-Key` |
+
+**Input:**
+
+```typescript
+z.object({
+  organizationId: z.string().cuid(),
+  idempotencyKey: z.string().uuid(),
+})
+```
+
+**Output:**
+
+```typescript
+{
+  organization: {
+    id: string,
+    name: string,
+    slug: string,
+    organizationType: OrganizationType,
+  },
+}
+```
+
+**Side Effects:**
+- Session's `activeOrganizationId` updated to the target org
+- `AuditLog` entry: `organization.switched`
+
+**Access Validation:**
+1. Platform admins (`SUPER_ADMIN`, `SUPPORT`) can switch to any org
+2. Direct membership on the target org grants access
+3. MSP delegation — membership on the parent MSP org with an `mspRole` grants access
+4. Otherwise, returns `INSUFFICIENT_ROLE` error
+
+---
+
+### `organization.getDpaStatus`
+
+| Field | Value |
+|---|---|
+| **Type** | `query` |
+| **Description** | Get the DPA (Data Processing Agreement) acceptance status for the active organization |
+| **Minimum Role** | `ORG_MEMBER` (read-only) |
+| **Idempotent** | N/A (query) |
+
+**Input:**
+
+```typescript
+z.object({}) // no input — uses active org from session
+```
+
+**Output:**
+
+```typescript
+{
+  accepted: boolean,
+  version: string | null,           // e.g., "2024-01"
+  acceptedAt: Date | null,
+  acceptedBy: {                     // null if not yet accepted
+    id: string,
+    name: string,
+    email: string,
+  } | null,
+}
+```
+
+**Notes:**
+- Returns the most recent DPA acceptance record for the org
+- If no DPA has been accepted, `accepted` is `false` and all other fields are `null`
+
+---
+
+### `organization.deactivate`
+
+| Field | Value |
+|---|---|
+| **Type** | `mutation` |
+| **Description** | Soft-delete the active organization by setting `deletedAt`. The organization is not hard-deleted to preserve audit trail and compliance records. |
+| **Minimum Role** | `ORG_OWNER` |
+| **Idempotent** | Yes — requires `Idempotency-Key` |
+
+**Input:**
+
+```typescript
+z.object({
+  idempotencyKey: z.string().uuid(),
+})
+```
+
+**Output:**
+
+```typescript
+{
+  organization: {
+    id: string,
+    deletedAt: Date,            // timestamp of deactivation
+  },
+}
+```
+
+**Side Effects:**
+- `AuditLog` entry: `organization.deactivated`
+
+**Validation:**
+- Organization must not already be deactivated (`ORGANIZATION:LIFECYCLE:ALREADY_DEACTIVATED` error)
+
+---
+
+### `organization.acceptDpa`
+
+| Field | Value |
+|---|---|
+| **Type** | `mutation` |
+| **Description** | Accept a specific version of the Data Processing Agreement for the active organization. Idempotent — re-accepting the same version returns the existing record. |
+| **Minimum Role** | `ORG_OWNER` |
+| **Idempotent** | Yes — requires `Idempotency-Key` (also idempotent at the business logic level) |
+
+**Input:**
+
+```typescript
+z.object({
+  version: z.string().min(1),       // e.g., "2024-01"
+  idempotencyKey: z.string().uuid(),
+})
+```
+
+**Output:**
+
+```typescript
+{
+  dpaAcceptance: {
+    id: string,
+    version: string,
+    acceptedAt: Date,
+    userId: string,
+  },
+}
+```
+
+**Side Effects:**
+- `AuditLog` entry: `organization.dpa_accepted` (only on first acceptance, not on re-acceptance)
+- DPA acceptance unlocks provisioning-gated operations (e.g., `subscription.create`, `vendor.connect`)
+
+**Notes:**
+- The `organizationId_version` compound key ensures each version can only be accepted once per org
+- Re-accepting the same version is a no-op that returns the existing record
