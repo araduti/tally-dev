@@ -6,6 +6,7 @@ import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError, of
 import Decimal from 'decimal.js';
 import { getAdapter, decryptCredentials } from '@/adapters';
 import { VendorError } from '@/adapters/types';
+import { inngest } from '@/inngest/client';
 
 export const subscriptionRouter = router({
   list: orgMemberProcedure
@@ -242,6 +243,17 @@ export const subscriptionRouter = router({
           before: { status: subscription.status },
           after: { status: updated.status, scheduledDate: subscription.commitmentEndDate },
           traceId: ctx.traceId,
+        });
+
+        await inngest.send({
+          name: 'subscription/commitment-expired',
+          data: {
+            subscriptionId: subscription.id,
+            organizationId: ctx.organizationId!,
+            commitmentEndDate: subscription.commitmentEndDate!.toISOString(),
+            userId: ctx.userId,
+            traceId: ctx.traceId,
+          },
         });
 
         return { subscription: updated, scheduledDate: subscription.commitmentEndDate };
