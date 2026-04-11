@@ -442,12 +442,34 @@ export const licenseRouter = router({
               continue;
             }
 
+            // Provision subscription on vendor before creating local records
+            let vendorSubscription;
+            try {
+              const adapter = getAdapter(vendorConnection.vendorType);
+              const credentials = decryptCredentials(vendorConnection.credentials);
+              vendorSubscription = await adapter.createSubscription(
+                credentials,
+                offering.externalSku,
+                record.quantity,
+              );
+            } catch (error) {
+              const msg = error instanceof VendorError
+                ? `Vendor API error: ${error.message}`
+                : 'Failed to provision subscription on vendor';
+              results.push({ index: i, status: 'SKIPPED', licenseId: null, error: msg });
+              skipped++;
+              continue;
+            }
+
             subscription = await ctx.db.subscription.create({
               data: {
                 vendorConnectionId: vendorConnection.id,
                 bundleId: offering.bundleId,
-                externalId: `import-${crypto.randomUUID()}`,
+                externalId: vendorSubscription.externalId,
                 status: 'ACTIVE',
+                ...(vendorSubscription.commitmentEndDate
+                  ? { commitmentEndDate: vendorSubscription.commitmentEndDate }
+                  : {}),
               },
             });
           }

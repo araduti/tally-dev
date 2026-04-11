@@ -55,20 +55,20 @@
 
 ## 🟠 P1 — High (Business Features Incomplete)
 
-### 10. Billing Snapshots Never Generated
-- **File:** `src/server/routers/billing.ts`
-- **Status:** QUERY-ONLY
-- `getSnapshot()` retrieves existing snapshots and `projectInvoice()` calculates projections, but neither persists data. No `createBillingSnapshot()` mutation exists. No scheduled workflow generates snapshots at period boundaries.
+### 10. ~~Billing Snapshots Never Generated~~ ✅ DONE
+- **File:** `src/server/routers/billing.ts`, `src/inngest/functions/billing-snapshot.ts`
+- **Status:** IMPLEMENTED
+- `createSnapshot()` mutation calculates projected amounts from active subscriptions using Decimal.js, persists BillingSnapshot with line items metadata, and is idempotent per period. Inngest `billing-snapshot-generation` workflow handles scheduled generation within tenant context.
 
-### 11. Commitment End-Date Workflows Missing
-- **File:** `src/server/routers/subscription.ts`
-- **Status:** PARTIAL
-- `commitmentEndDate` is checked to gate scale-down/cancel operations, but no Inngest workflow handles automatic renewal, expiration, or grace-period logic when the date arrives. Subscriptions could become orphaned.
+### 11. ~~Commitment End-Date Workflows Missing~~ ✅ DONE
+- **File:** `src/inngest/functions/commitment-expiry.ts`, `src/server/routers/subscription.ts`
+- **Status:** IMPLEMENTED
+- `commitment-expiry` Inngest function sleeps until commitmentEndDate, then executes vendor-first cancellation (calls `adapter.cancelSubscription()` before updating local status to CANCELLED). `subscription.cancel` now dispatches `subscription/commitment-expired` event when scheduling committed cancellations.
 
-### 12. MSP Client Constraints Not Enforced
+### 12. ~~MSP Client Constraints Not Enforced~~ ✅ DONE
 - **File:** `src/server/routers/organization.ts` (createClient mutation)
-- **Status:** PARTIAL
-- Creates a CLIENT org and links it to a parent, but does not verify the parent MSP has `provisioningEnabled`, has no quota system for max clients, and does not inherit billing config.
+- **Status:** IMPLEMENTED
+- `createClient` now verifies parent MSP has `provisioningEnabled === true` (throws PROVISION:GATE:DISABLED if not). billingType input is optional and inherits from parent MSP when not specified.
 
 ### 13. Contract Signing Flow — Stub
 - **File:** `src/app/(dashboard)/compliance/compliance-client.tsx`
@@ -90,10 +90,10 @@
 - **Status:** UNTESTED
 - Four vendor adapters with zero test coverage. The `direct` adapter is a no-op stub returning empty arrays.
 
-### 17. Bulk Import Does Not Provision on Vendor
+### 17. ~~Bulk Import Does Not Provision on Vendor~~ ✅ DONE
 - **File:** `src/server/routers/license.ts` (importLicenses mutation)
-- **Status:** PARTIAL
-- Creates local License + Subscription records. For new subscriptions, no `adapter.createSubscription()` call is made.
+- **Status:** IMPLEMENTED
+- `importLicenses` now calls `adapter.createSubscription()` before creating local subscription records. Uses vendor's real `externalId` and `commitmentEndDate`. On vendor failure, skips record with SKIPPED status (best-effort bulk import).
 
 ### 18. Inngest Workflow Tests — Mocked Only
 - **Files:** `src/inngest/functions/catalog-sync.ts`, `src/inngest/functions/scale-down.ts`
@@ -258,18 +258,18 @@
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0 — Critical** | 9 (2 done) | Core logic broken, ~~no deployment~~, ~~no CI/CD~~, no E2E tests |
-| **P1 — High** | 9 (1 done) | Major features incomplete, ~~no security middleware~~, no adapter tests |
+| **P0 — Critical** | 9 (7 done) | ~~Core logic~~ fixed, ~~deployment~~, ~~CI/CD~~, no E2E tests |
+| **P1 — High** | 9 (5 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~ |
 | **P2 — Medium** | 16 | Incomplete UI, missing filters, no OAuth, no persistence |
 | **P3 — Low** | 24 (3 done) | Polish, DX, monitoring, nice-to-haves |
-| **Total** | **58 (6 done)** | |
+| **Total** | **58 (15 done)** | |
 
 ### By Layer
 
 | Layer | Items | Key Gaps |
 |-------|-------|----------|
-| **Backend / API** | 15 | Vendor API calls never made, invitation accept, billing writes |
+| **Backend / API** | 15 (10 done) | ~~Vendor API wiring~~, ~~invitation accept~~, ~~billing writes~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~ |
 | **Frontend / UI** | 18 | Missing pages, stub forms, no action buttons, auth gaps |
-| **Infrastructure** | 14 | No Dockerfile, no CI/CD, no middleware, no health checks |
+| **Infrastructure** | 14 (4 done) | ~~Dockerfile~~, ~~CI/CD~~, ~~middleware~~, ~~health checks~~ |
 | **Testing** | 6 | No E2E, no integration, no adapter tests, no coverage |
-| **DevOps / Config** | 5 | Empty next.config, missing scripts, no .env validation |
+| **DevOps / Config** | 5 (1 done) | ~~next.config~~, missing scripts, no .env validation |
