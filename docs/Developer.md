@@ -76,7 +76,11 @@ npx prisma generate   # generates the type-safe Prisma client
 npx prisma db push    # applies the schema to the local DB
 ```
 
-> To seed initial data (e.g., catalog entries), run: `npm run db:seed`
+> To seed initial data (admin user, organizations, catalog entries), run: `npm run db:seed`
+>
+> **Default admin credentials** (local development only):
+> - **Email:** `admin@tally.dev`
+> - **Password:** `admin123`
 
 ### Step 4 — Run the application
 
