@@ -64,7 +64,21 @@ vi.mock('@/lib/rls-proxy', () => ({
   createRLSProxy: vi.fn(() => rlsDb),
 }));
 
+// Replace orgAdminMutationProcedure with orgAdminProcedure so the
+// idempotency guard (which cannot access `input` via createCaller in
+// tRPC v11) is bypassed. RBAC is still enforced via orgAdminProcedure.
+vi.mock('@/server/trpc/init', async () => {
+  const actual = await vi.importActual<typeof import('@/server/trpc/init')>(
+    '@/server/trpc/init',
+  );
+  return {
+    ...actual,
+    orgAdminMutationProcedure: actual.orgAdminProcedure,
+  };
+});
+
 import Decimal from 'decimal.js';
+import { writeAuditLog } from '@/lib/audit';
 import { billingRouter } from '../billing';
 
 // ──────────────────────────────────────────────
@@ -517,6 +531,175 @@ describe('billingRouter', () => {
 
       expect(result.lineItems[0].pendingQuantity).toBe(5);
       expect(result.lineItems[0].commitmentEndDate).toEqual(commitDate);
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  createSnapshot
+  // ─────────────────────────────────────
+  describe('createSnapshot', () => {
+    const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('creates a billing snapshot from active subscriptions', async () => {
+      const subscription = makeMockSubscription();
+      const mockSnapshot = {
+        id: VALID_CUID,
+        organizationId: ORG_ID,
+        projectedAmount: '60.00',
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+        metadata: { lineItems: [] },
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const caller = createAuthedCaller('ORG_ADMIN');
+
+      // No existing snapshot
+      rlsDb.billingSnapshot.findFirst.mockResolvedValue(null);
+      // Active subscriptions
+      rlsDb.subscription.findMany.mockResolvedValue([subscription]);
+      // Create snapshot
+      rlsDb.billingSnapshot.create.mockResolvedValue(mockSnapshot);
+
+      const result = await caller.createSnapshot({
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual(mockSnapshot);
+      expect(rlsDb.billingSnapshot.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            periodStart: new Date('2024-06-01'),
+            periodEnd: new Date('2024-06-30'),
+            metadata: expect.objectContaining({
+              lineItems: expect.any(Array),
+            }),
+          }),
+        }),
+      );
+      expect(writeAuditLog).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'billing.snapshot_created',
+        }),
+      );
+    });
+
+    it('returns existing snapshot for the same period (idempotent)', async () => {
+      const existingSnapshot = makeMockSnapshot({
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+      });
+
+      const caller = createAuthedCaller('ORG_ADMIN');
+
+      rlsDb.billingSnapshot.findFirst.mockResolvedValue(existingSnapshot);
+
+      const result = await caller.createSnapshot({
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result).toEqual(existingSnapshot);
+      // Should NOT create a new snapshot
+      expect(rlsDb.billingSnapshot.create).not.toHaveBeenCalled();
+    });
+
+    it('defaults period to current month when not specified', async () => {
+      const mockSnapshot = makeMockSnapshot();
+
+      const caller = createAuthedCaller('ORG_ADMIN');
+
+      rlsDb.billingSnapshot.findFirst.mockResolvedValue(null);
+      rlsDb.subscription.findMany.mockResolvedValue([]);
+      rlsDb.billingSnapshot.create.mockResolvedValue(mockSnapshot);
+
+      await caller.createSnapshot({ idempotencyKey: VALID_UUID });
+
+      expect(rlsDb.billingSnapshot.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            periodStart: expect.any(Date),
+            periodEnd: expect.any(Date),
+          }),
+        }),
+      );
+    });
+
+    it('calculates projected amount with Decimal.js', async () => {
+      const sub = makeMockSubscription({
+        licenses: [
+          {
+            id: 'clh1234567890abcdefghijl1',
+            quantity: 5,
+            pendingQuantity: null,
+            productOffering: { id: 'clh1234567890abcdefghij30', effectiveUnitCost: '12.50' },
+          },
+        ],
+      });
+
+      const caller = createAuthedCaller('ORG_ADMIN');
+
+      rlsDb.billingSnapshot.findFirst.mockResolvedValue(null);
+      rlsDb.subscription.findMany.mockResolvedValue([sub]);
+      rlsDb.billingSnapshot.create.mockImplementation(async (args: any) => ({
+        id: VALID_CUID,
+        ...args.data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      await caller.createSnapshot({
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+        idempotencyKey: VALID_UUID,
+      });
+
+      // 12.50 * 5 = 62.50
+      expect(rlsDb.billingSnapshot.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            projectedAmount: expect.anything(),
+          }),
+        }),
+      );
+
+      const callData = rlsDb.billingSnapshot.create.mock.calls[0][0].data;
+      expect(new Decimal(callData.projectedAmount.toString()).eq(new Decimal('62.50'))).toBe(true);
+    });
+
+    it('creates snapshot with zero total when no active subscriptions', async () => {
+      const caller = createAuthedCaller('ORG_ADMIN');
+
+      rlsDb.billingSnapshot.findFirst.mockResolvedValue(null);
+      rlsDb.subscription.findMany.mockResolvedValue([]);
+      rlsDb.billingSnapshot.create.mockImplementation(async (args: any) => ({
+        id: VALID_CUID,
+        ...args.data,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+
+      await caller.createSnapshot({
+        periodStart: new Date('2024-06-01'),
+        periodEnd: new Date('2024-06-30'),
+        idempotencyKey: VALID_UUID,
+      });
+
+      const callData = rlsDb.billingSnapshot.create.mock.calls[0][0].data;
+      expect(new Decimal(callData.projectedAmount.toString()).eq(new Decimal('0'))).toBe(true);
+      expect(callData.metadata.lineItems).toHaveLength(0);
+    });
+
+    it('requires ORG_ADMIN or higher role', async () => {
+      const caller = createAuthedCaller('ORG_MEMBER');
+
+      await expect(
+        caller.createSnapshot({ idempotencyKey: VALID_UUID }),
+      ).rejects.toThrow();
     });
   });
 });

@@ -76,6 +76,14 @@ const mockCancelSubscription = vi.hoisted(() =>
   vi.fn().mockResolvedValue(undefined),
 );
 
+const mockInngestSend = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({ ids: ['mock-event-id'] }),
+);
+
+vi.mock('@/inngest/client', () => ({
+  inngest: { send: mockInngestSend },
+}));
+
 vi.mock('@/adapters', () => ({
   getAdapter: vi.fn().mockReturnValue({
     createSubscription: mockCreateSubscription,
@@ -1278,6 +1286,56 @@ describe('subscriptionRouter', () => {
           }),
         }),
       );
+    });
+
+    it('dispatches commitment-expired Inngest event for committed cancel', async () => {
+      const caller = createAuthedCaller('ORG_OWNER');
+      const futureDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const sub = makeMockSubscription({
+        status: 'ACTIVE',
+        commitmentEndDate: futureDate,
+      });
+      rlsDb.subscription.findFirst.mockResolvedValue(sub);
+      rlsDb.subscription.update.mockResolvedValue({
+        ...sub,
+        status: 'SUSPENDED',
+      });
+
+      await caller.cancel({
+        subscriptionId: VALID_CUID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(mockInngestSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'subscription/commitment-expired',
+          data: expect.objectContaining({
+            subscriptionId: VALID_CUID,
+            organizationId: ORG_ID,
+            commitmentEndDate: futureDate.toISOString(),
+          }),
+        }),
+      );
+    });
+
+    it('does not dispatch Inngest event for immediate cancellation', async () => {
+      const caller = createAuthedCaller('ORG_OWNER');
+      const sub = makeMockSubscription({
+        status: 'ACTIVE',
+        commitmentEndDate: null,
+      });
+      rlsDb.subscription.findFirst.mockResolvedValue(sub);
+      rlsDb.subscription.update.mockResolvedValue({
+        ...sub,
+        status: 'CANCELLED',
+      });
+
+      await caller.cancel({
+        subscriptionId: VALID_CUID,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(mockInngestSend).not.toHaveBeenCalled();
     });
 
     it('treats expired commitmentEndDate as no commitment (immediate cancel)', async () => {
