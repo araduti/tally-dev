@@ -26,13 +26,22 @@ interface ImportResult {
 
 // ---------- CSV Parser ----------
 
+// CUID format: starts with 'c', at least 25 characters
+const CUID_PATTERN = /^c[a-z0-9]{24,}$/;
+
 function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
   const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
   const rows: ParsedRow[] = [];
   const errors: ParseError[] = [];
 
-  // Skip header if present
-  const startIndex = lines.length > 0 && lines[0].toLowerCase().includes('productofferingid') ? 1 : 0;
+  // Skip header if first row columns match expected headers exactly
+  let startIndex = 0;
+  if (lines.length > 0) {
+    const headerCols = lines[0].split(',').map((c) => c.trim().toLowerCase());
+    if (headerCols[0] === 'productofferingid' && headerCols[1] === 'quantity') {
+      startIndex = 1;
+    }
+  }
 
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i];
@@ -46,8 +55,8 @@ function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
     const productOfferingId = parts[0];
     const quantity = parseInt(parts[1], 10);
 
-    if (!productOfferingId || productOfferingId.length < 10) {
-      errors.push({ line: i + 1, raw: line, error: 'Invalid productOfferingId' });
+    if (!productOfferingId || !CUID_PATTERN.test(productOfferingId)) {
+      errors.push({ line: i + 1, raw: line, error: 'Invalid productOfferingId (expected CUID format)' });
       continue;
     }
 

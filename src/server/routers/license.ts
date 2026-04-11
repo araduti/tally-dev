@@ -437,8 +437,9 @@ export const licenseRouter = router({
 
           results.push({ index: i, status: 'SUCCESS', licenseId: license.id, error: null });
           imported++;
-        } catch {
-          results.push({ index: i, status: 'ERROR', licenseId: null, error: 'Unexpected error during import' });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unexpected error during import';
+          results.push({ index: i, status: 'ERROR', licenseId: null, error: msg });
           skipped++;
         }
       }
