@@ -3,6 +3,7 @@ import OrgSwitcher from './org-switcher';
 import UserProfileMenu from './user-profile-menu';
 import { MobileSidebarToggle, MobileMenuButton } from './mobile-sidebar';
 import { MobileSidebarProvider } from './mobile-sidebar-context';
+import Breadcrumbs from './breadcrumbs';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: '📊' },
@@ -71,7 +72,10 @@ export default function DashboardLayout({
             <UserProfileMenu />
           </div>
 
-          <div className="p-4 md:p-8">{children}</div>
+          <div className="p-4 md:p-8">
+            <Breadcrumbs />
+            {children}
+          </div>
         </main>
       </div>
     </MobileSidebarProvider>
