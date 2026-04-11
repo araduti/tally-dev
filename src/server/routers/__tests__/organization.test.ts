@@ -655,7 +655,7 @@ describe('organizationRouter', () => {
           organizationId: TARGET_ORG_ID,
           idempotencyKey: VALID_UUID,
         }),
-      ).rejects.toThrow('You do not have access to this organization');
+      ).rejects.toThrow('You do not have permission to perform this action');
     });
 
     it('writes audit log with organization.switched action', async () => {

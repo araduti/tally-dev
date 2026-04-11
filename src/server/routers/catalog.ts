@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
-import { createBusinessError } from '@/lib/errors';
+import { offeringUnavailableError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 import { VendorType } from '@prisma/client';
 
@@ -63,11 +63,7 @@ export const catalogRouter = router({
       });
 
       if (!bundle) {
-        throw createBusinessError({
-          code: 'NOT_FOUND',
-          message: 'Bundle not found',
-          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
-        });
+        throw offeringUnavailableError();
       }
 
       return bundle;
@@ -119,11 +115,7 @@ export const catalogRouter = router({
       });
 
       if (!bundle) {
-        throw createBusinessError({
-          code: 'NOT_FOUND',
-          message: 'Bundle not found',
-          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
-        });
+        throw offeringUnavailableError();
       }
 
       const options = bundle.offerings

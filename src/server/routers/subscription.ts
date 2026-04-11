@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { router, orgMemberProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { SubscriptionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError } from '@/lib/errors';
+import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError, offeringUnavailableError, offeringPriceMissingError, quantityOutOfRangeError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
 export const subscriptionRouter = router({
@@ -100,49 +100,18 @@ export const subscriptionRouter = router({
         include: { bundle: true },
       });
       if (!offering) {
-        throw createBusinessError({
-          code: 'NOT_FOUND',
-          message: 'Product offering not found',
-          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
-        });
+        throw offeringUnavailableError();
       }
       if (!offering.effectiveUnitCost) {
-        throw createBusinessError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Product offering price not available',
-          errorCode: 'CATALOG:OFFERING:PRICE_MISSING',
-          recovery: {
-            action: 'FORCE_SYNC',
-            label: 'Sync Catalog',
-            params: {},
-          },
-        });
+        throw offeringPriceMissingError(null, null);
       }
 
       // Check quantity bounds
       if (offering.minQuantity && input.quantity < offering.minQuantity) {
-        throw createBusinessError({
-          code: 'BAD_REQUEST',
-          message: 'Requested quantity is below the minimum allowed',
-          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
-          recovery: {
-            action: 'NONE',
-            label: 'Adjust quantity',
-            params: { min: offering.minQuantity, max: offering.maxQuantity, requested: input.quantity },
-          },
-        });
+        throw quantityOutOfRangeError(offering.minQuantity, offering.maxQuantity, input.quantity);
       }
       if (offering.maxQuantity && input.quantity > offering.maxQuantity) {
-        throw createBusinessError({
-          code: 'BAD_REQUEST',
-          message: 'Requested quantity exceeds the maximum allowed',
-          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
-          recovery: {
-            action: 'NONE',
-            label: 'Adjust quantity',
-            params: { min: offering.minQuantity, max: offering.maxQuantity, requested: input.quantity },
-          },
-        });
+        throw quantityOutOfRangeError(offering.minQuantity, offering.maxQuantity, input.quantity);
       }
 
       const unitCost = new Decimal(offering.effectiveUnitCost.toString());

@@ -4,7 +4,8 @@ import type { TRPCContext } from './context';
 import { prisma } from '@/lib/db';
 import { createRLSProxy } from '@/lib/rls-proxy';
 import { redis, IDEMPOTENCY_TTL } from '@/lib/redis';
-import { noOrgContextError, insufficientRoleError } from '@/lib/errors';
+import { checkRateLimit } from '@/lib/rate-limit';
+import { noOrgContextError, insufficientRoleError, rateLimitExceededError } from '@/lib/errors';
 import type { OrgRole, MspRole, PlatformRole } from '@prisma/client';
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -106,6 +107,43 @@ const isAuthenticated = t.middleware(async ({ ctx, next }) => {
 });
 
 /**
+ * Middleware: Rate limiting (API-Conventions §10).
+ *
+ * Runs AFTER authentication so we have userId + organizationId.
+ * Uses the tRPC procedure `type` to pick the correct tier:
+ *   - query    → 100 req / 60 s per user per org
+ *   - mutation →  30 req / 60 s per user per org
+ *
+ * Sets X-RateLimit-* response headers on every request.
+ * On rate limit exceeded: throws TOO_MANY_REQUESTS with business error
+ * code AUTH:RATE_LIMIT:EXCEEDED.
+ */
+const rateLimit = t.middleware(async ({ ctx, next, type }) => {
+  const scope = type === 'mutation' ? 'mutation' : 'query';
+  // After isAuthenticated, userId is always set — fall back for safety
+  const userId = ctx.userId ?? 'anonymous';
+  const identifier = ctx.organizationId
+    ? `${userId}:${ctx.organizationId}`
+    : userId;
+
+  const result = await checkRateLimit(scope, identifier);
+
+  // Set rate limit headers on the response (ctx.resHeaders may be null
+  // when called via RSC createCaller or in unit tests)
+  if (ctx.resHeaders) {
+    ctx.resHeaders.set('X-RateLimit-Limit', String(result.limit));
+    ctx.resHeaders.set('X-RateLimit-Remaining', String(result.remaining));
+    ctx.resHeaders.set('X-RateLimit-Reset', String(result.reset));
+  }
+
+  if (!result.allowed) {
+    throw rateLimitExceededError(result.reset - Math.floor(Date.now() / 1000));
+  }
+
+  return next();
+});
+
+/**
  * Middleware: Require an active organization context.
  */
 const requireOrg = t.middleware(async ({ ctx, next }) => {
@@ -185,7 +223,7 @@ const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
 });
 
 // Composed procedure types — QUERIES (read-only, no idempotency)
-export const authenticatedProcedure = t.procedure.use(isAuthenticated);
+export const authenticatedProcedure = t.procedure.use(isAuthenticated).use(rateLimit);
 export const protectedProcedure = authenticatedProcedure.use(requireOrg);
 export const orgMemberProcedure = protectedProcedure;
 export const orgAdminProcedure = protectedProcedure.use(requireRole('ORG_ADMIN', 'ORG_OWNER', 'MSP_ADMIN', 'MSP_OWNER'));

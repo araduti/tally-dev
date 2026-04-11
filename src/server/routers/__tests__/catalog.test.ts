@@ -466,8 +466,8 @@ describe('catalogRouter', () => {
       await expect(
         caller.getBundle({ bundleId: VALID_CUID }),
       ).rejects.toMatchObject({
-        code: 'NOT_FOUND',
-        message: 'Bundle not found',
+        code: 'PRECONDITION_FAILED',
+        message: 'Product offering is not available',
       });
     });
 
@@ -719,8 +719,8 @@ describe('catalogRouter', () => {
       await expect(
         caller.comparePricing({ bundleId: VALID_CUID, quantity: 5 }),
       ).rejects.toMatchObject({
-        code: 'NOT_FOUND',
-        message: 'Bundle not found',
+        code: 'PRECONDITION_FAILED',
+        message: 'Product offering is not available',
       });
     });
 

@@ -25,6 +25,10 @@ export interface TRPCContext {
   // Request metadata
   traceId: string;
   headers: Headers;
+
+  // Response headers — used by middleware (e.g. rate limiting) to set
+  // outbound headers. May be null when called via RSC createCaller.
+  resHeaders: Headers | null;
 }
 
 export function createContext(opts: { req: Request; resHeaders: Headers }): TRPCContext {
@@ -40,5 +44,6 @@ export function createContext(opts: { req: Request; resHeaders: Headers }): TRPC
     db: null, // Set by auth middleware
     traceId: crypto.randomUUID(),
     headers: opts.req.headers,
+    resHeaders: opts.resHeaders,
   };
 }

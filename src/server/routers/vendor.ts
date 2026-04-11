@@ -3,7 +3,7 @@ import { router, mspTechProcedure, orgOwnerMutationProcedure, orgAdminMutationPr
 import { VendorType, VendorConnectionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { encrypt } from '@/lib/encryption';
-import { createBusinessError, dpaNotAcceptedError } from '@/lib/errors';
+import { createBusinessError, dpaNotAcceptedError, vendorAuthDisconnectedError } from '@/lib/errors';
 
 export const vendorRouter = router({
   listConnections: mspTechProcedure
@@ -161,16 +161,7 @@ export const vendorRouter = router({
       }
 
       if (connection.status === 'DISCONNECTED') {
-        throw createBusinessError({
-          code: 'PRECONDITION_FAILED',
-          message: 'Cannot sync a disconnected vendor connection',
-          errorCode: 'VENDOR:AUTH:DISCONNECTED',
-          recovery: {
-            action: 'REAUTH_VENDOR',
-            label: 'Reconnect Vendor',
-            params: { vendorType: connection.vendorType, vendorConnectionId: connection.id },
-          },
-        });
+        throw vendorAuthDisconnectedError(connection.vendorType, connection.id);
       }
 
       const syncId = `sync-${crypto.randomUUID()}`;
