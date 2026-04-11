@@ -120,7 +120,11 @@ const isAuthenticated = t.middleware(async ({ ctx, next }) => {
  */
 const rateLimit = t.middleware(async ({ ctx, next, type }) => {
   const scope = type === 'mutation' ? 'mutation' : 'query';
-  const identifier = `${ctx.userId}:${ctx.organizationId ?? 'global'}`;
+  // After isAuthenticated, userId is always set — fall back for safety
+  const userId = ctx.userId ?? 'anonymous';
+  const identifier = ctx.organizationId
+    ? `${userId}:${ctx.organizationId}`
+    : userId;
 
   const result = await checkRateLimit(scope, identifier);
 

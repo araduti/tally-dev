@@ -42,16 +42,19 @@ export async function checkRateLimit(
   const key = `ratelimit:${scope}:${identifier}`;
 
   try {
-    // INCR is atomic — creates the key with value 1 if it doesn't exist
-    const count = await redis.incr(key);
-
-    // Set TTL only on the first request in the window (count === 1)
-    if (count === 1) {
-      await redis.expire(key, config.windowSeconds);
-    }
-
-    // Retrieve the remaining TTL so we can report the reset timestamp
-    const ttl = await redis.ttl(key);
+    // Use a Lua script to make INCR + EXPIRE atomic and avoid race conditions
+    // where concurrent first-requests each call EXPIRE separately.
+    const luaScript = `
+      local count = redis.call('INCR', KEYS[1])
+      if count == 1 then
+        redis.call('EXPIRE', KEYS[1], ARGV[1])
+      end
+      local ttl = redis.call('TTL', KEYS[1])
+      return {count, ttl}
+    `;
+    const [count, ttl] = await redis.eval(
+      luaScript, 1, key, config.windowSeconds,
+    ) as [number, number];
     const reset = Math.floor(Date.now() / 1000) + Math.max(ttl, 0);
 
     const remaining = Math.max(config.maxRequests - count, 0);

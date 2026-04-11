@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMobileSidebar } from './mobile-sidebar-context';
 
 interface NavigationItem {
   name: string;
@@ -15,41 +16,30 @@ export function MobileSidebarToggle({
 }: {
   navigation: NavigationItem[];
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const { isOpen, close } = useMobileSidebar();
   const pathname = usePathname();
 
   // Close sidebar on navigation
   useEffect(() => {
-    setIsOpen(false);
-  }, [pathname]);
+    close();
+  }, [pathname, close]);
 
-  // Close on escape key
-  const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') setIsOpen(false);
-  }, []);
-
+  // Close on escape key and prevent body scroll
   useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    if (!isOpen) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') close();
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [isOpen, handleKeyDown]);
-
-  // Listen for trigger button click
-  useEffect(() => {
-    const handler = () => setIsOpen(true);
-    const trigger = document.querySelector('[data-mobile-menu-trigger]');
-    if (trigger) {
-      trigger.addEventListener('click', handler);
-      return () => trigger.removeEventListener('click', handler);
-    }
-  }, []);
+  }, [isOpen, close]);
 
   if (!isOpen) return null;
 
@@ -58,7 +48,7 @@ export function MobileSidebarToggle({
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/60"
-        onClick={() => setIsOpen(false)}
+        onClick={close}
         aria-hidden="true"
       />
 
@@ -75,7 +65,7 @@ export function MobileSidebarToggle({
           </Link>
           <button
             type="button"
-            onClick={() => setIsOpen(false)}
+            onClick={close}
             className="text-slate-400 hover:text-white p-1"
             aria-label="Close navigation menu"
           >
@@ -97,5 +87,22 @@ export function MobileSidebarToggle({
         </nav>
       </aside>
     </div>
+  );
+}
+
+export function MobileMenuButton() {
+  const { isOpen, toggle } = useMobileSidebar();
+
+  return (
+    <button
+      type="button"
+      className="text-slate-300 hover:text-white p-1"
+      aria-label={isOpen ? 'Close navigation menu' : 'Open navigation menu'}
+      aria-expanded={isOpen}
+      aria-controls="mobile-sidebar"
+      onClick={toggle}
+    >
+      <span className="text-xl" aria-hidden="true">☰</span>
+    </button>
   );
 }

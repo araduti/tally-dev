@@ -8,16 +8,13 @@
  *  - remaining never goes below 0
  *  - Graceful degradation: Redis failure returns allowed: true
  *  - Redis key pattern follows `ratelimit:{scope}:{identifier}`
- *  - TTL is set only on the first request in the window
  */
 
 // ── Hoisted mocks ──
 
 const { mockRedis } = vi.hoisted(() => {
   const mockRedis = {
-    incr: vi.fn(),
-    expire: vi.fn(),
-    ttl: vi.fn(),
+    eval: vi.fn(),
   };
   return { mockRedis };
 });
@@ -31,10 +28,11 @@ import { checkRateLimit } from '../rate-limit';
 
 // ── Helpers ──
 
+/**
+ * Simulates the Redis Lua script response: [count, ttl]
+ */
 function setupRedis(count: number, ttl: number = 55) {
-  mockRedis.incr.mockResolvedValue(count);
-  mockRedis.expire.mockResolvedValue(1);
-  mockRedis.ttl.mockResolvedValue(ttl);
+  mockRedis.eval.mockResolvedValue([count, ttl]);
 }
 
 // ── Tests ──
@@ -57,11 +55,13 @@ describe('checkRateLimit', () => {
       expect(result.remaining).toBe(99);
       expect(result.reset).toBeGreaterThan(0);
 
-      // Verify the correct Redis key
-      expect(mockRedis.incr).toHaveBeenCalledWith('ratelimit:query:user1:org1');
-
-      // TTL should be set on first request (count === 1)
-      expect(mockRedis.expire).toHaveBeenCalledWith('ratelimit:query:user1:org1', 60);
+      // Verify the Lua script is called with the correct key and window
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('INCR'),
+        1,
+        'ratelimit:query:user1:org1',
+        60,
+      );
     });
 
     it('allows request at the limit boundary (count === 100)', async () => {
@@ -81,14 +81,6 @@ describe('checkRateLimit', () => {
       expect(result.allowed).toBe(false);
       expect(result.remaining).toBe(0);
     });
-
-    it('does not set TTL on subsequent requests (count > 1)', async () => {
-      setupRedis(5, 45);
-
-      await checkRateLimit('query', 'user1:org1');
-
-      expect(mockRedis.expire).not.toHaveBeenCalled();
-    });
   });
 
   // ── Mutation scope (30 req / 60s) ──
@@ -102,7 +94,12 @@ describe('checkRateLimit', () => {
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(30);
       expect(result.remaining).toBe(29);
-      expect(mockRedis.incr).toHaveBeenCalledWith('ratelimit:mutation:user1:org1');
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('INCR'),
+        1,
+        'ratelimit:mutation:user1:org1',
+        60,
+      );
     });
 
     it('denies at count 31', async () => {
@@ -127,7 +124,12 @@ describe('checkRateLimit', () => {
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(10);
       expect(result.remaining).toBe(9);
-      expect(mockRedis.incr).toHaveBeenCalledWith('ratelimit:auth:192.168.1.1');
+      expect(mockRedis.eval).toHaveBeenCalledWith(
+        expect.stringContaining('INCR'),
+        1,
+        'ratelimit:auth:192.168.1.1',
+        60,
+      );
     });
 
     it('denies at count 11', async () => {
@@ -169,35 +171,13 @@ describe('checkRateLimit', () => {
   // ── Graceful degradation ──
 
   describe('graceful degradation', () => {
-    it('returns allowed: true when redis.incr fails', async () => {
-      mockRedis.incr.mockRejectedValue(new Error('ECONNREFUSED'));
+    it('returns allowed: true when redis.eval fails', async () => {
+      mockRedis.eval.mockRejectedValue(new Error('ECONNREFUSED'));
 
       const result = await checkRateLimit('query', 'user1:org1');
 
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(100);
-      expect(result.remaining).toBe(100);
-    });
-
-    it('returns allowed: true when redis.expire fails after incr succeeds', async () => {
-      mockRedis.incr.mockResolvedValue(1);
-      mockRedis.expire.mockRejectedValue(new Error('ECONNRESET'));
-
-      const result = await checkRateLimit('query', 'user1:org1');
-
-      expect(result.allowed).toBe(true);
-      expect(result.limit).toBe(100);
-      expect(result.remaining).toBe(100);
-    });
-
-    it('returns allowed: true when redis.ttl fails', async () => {
-      mockRedis.incr.mockResolvedValue(5);
-      mockRedis.expire.mockResolvedValue(1);
-      mockRedis.ttl.mockRejectedValue(new Error('ECONNRESET'));
-
-      const result = await checkRateLimit('query', 'user1:org1');
-
-      expect(result.allowed).toBe(true);
       expect(result.remaining).toBe(100);
     });
   });
