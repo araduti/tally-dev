@@ -64,6 +64,35 @@ vi.mock('@/lib/encryption', () => ({
   decrypt: vi.fn().mockReturnValue('decrypted'),
 }));
 
+const mockCreateSubscription = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    externalId: 'vendor-ext-001',
+    status: 'active',
+    quantity: 10,
+  }),
+);
+
+vi.mock('@/adapters', () => ({
+  getAdapter: vi.fn().mockReturnValue({
+    createSubscription: mockCreateSubscription,
+  }),
+  decryptCredentials: vi.fn().mockReturnValue({ clientId: 'id', clientSecret: 'secret' }),
+}));
+
+vi.mock('@/adapters/types', () => {
+  class VendorError extends Error {
+    constructor(
+      public readonly vendorType: string,
+      public readonly originalError: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Vendor API error from ${vendorType}`);
+      this.name = 'VendorError';
+    }
+  }
+  return { VendorError };
+});
+
 vi.mock('@/lib/redis', () => ({
   redis: {
     get: vi.fn().mockResolvedValue(null),
@@ -592,6 +621,7 @@ describe('subscriptionRouter', () => {
         id: 'vc-1',
         vendorType: offering.sourceType,
         status: 'ACTIVE',
+        credentials: 'encrypted-credentials',
       });
 
       // DB creates (via ctx.db → rlsDb)
