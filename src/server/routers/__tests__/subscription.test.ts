@@ -840,8 +840,8 @@ describe('subscriptionRouter', () => {
           idempotencyKey: VALID_UUID,
         }),
       ).rejects.toMatchObject({
-        code: 'NOT_FOUND',
-        message: 'Product offering not found',
+        code: 'PRECONDITION_FAILED',
+        message: 'Product offering is not available',
       });
     });
 
@@ -885,7 +885,7 @@ describe('subscriptionRouter', () => {
         }),
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
-        message: 'Requested quantity is below the minimum allowed',
+        message: 'Requested quantity is outside the allowed range',
       });
     });
 
@@ -903,7 +903,7 @@ describe('subscriptionRouter', () => {
         }),
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
-        message: 'Requested quantity exceeds the maximum allowed',
+        message: 'Requested quantity is outside the allowed range',
       });
     });
 

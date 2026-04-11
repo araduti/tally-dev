@@ -211,7 +211,7 @@ export function offeringUnavailableError(): TRPCError {
   });
 }
 
-export function offeringPriceMissingError(vendorConnectionId: string, lastSyncAt: Date | null): TRPCError {
+export function offeringPriceMissingError(vendorConnectionId: string | null, lastSyncAt: Date | null): TRPCError {
   return createBusinessError({
     code: 'PRECONDITION_FAILED',
     message: 'Pricing data not available — sync required',

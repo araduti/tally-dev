@@ -692,7 +692,7 @@ describe('licenseRouter', () => {
         }),
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
-        message: 'New quantity must be greater than current quantity for scale-up',
+        message: 'Requested quantity is outside the allowed range',
       });
     });
 
@@ -790,7 +790,7 @@ describe('licenseRouter', () => {
         }),
       ).rejects.toMatchObject({
         code: 'PRECONDITION_FAILED',
-        message: 'License has no associated product offering',
+        message: 'Product offering is not available',
       });
     });
 
@@ -1073,7 +1073,7 @@ describe('licenseRouter', () => {
         }),
       ).rejects.toMatchObject({
         code: 'BAD_REQUEST',
-        message: 'New quantity must be less than current quantity for scale-down',
+        message: 'Requested quantity is outside the allowed range',
       });
     });
 

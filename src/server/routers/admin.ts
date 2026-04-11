@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { router, orgOwnerProcedure, orgOwnerMutationProcedure } from '../trpc/init';
 import { OrgRole, MspRole, InvitationStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError } from '@/lib/errors';
+import { createBusinessError, invitationInvalidStatusError } from '@/lib/errors';
 
 export const adminRouter = router({
   listMembers: orgOwnerProcedure
@@ -259,11 +259,7 @@ export const adminRouter = router({
       }
 
       if (invitation.status !== InvitationStatus.PENDING) {
-        throw createBusinessError({
-          code: 'BAD_REQUEST',
-          message: `Invitation cannot be revoked because it is ${invitation.status}`,
-          errorCode: 'ADMIN:INVITATION:INVALID_STATUS',
-        });
+        throw invitationInvalidStatusError();
       }
 
       const updated = await ctx.db.invitation.update({

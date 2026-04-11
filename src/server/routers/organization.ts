@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
 import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError } from '@/lib/errors';
+import { createBusinessError, insufficientRoleError } from '@/lib/errors';
 
 /**
  * Parses a named cookie value from a raw cookie header string.
@@ -186,7 +186,7 @@ export const organizationRouter = router({
         throw createBusinessError({
           code: 'CONFLICT',
           message: 'An organization with this slug already exists',
-          errorCode: 'ADMIN:MEMBER:ALREADY_EXISTS',
+          errorCode: 'ORGANIZATION:SLUG:DUPLICATE',
         });
       }
 
@@ -272,11 +272,7 @@ export const organizationRouter = router({
           }
 
           if (!hasMspAccess) {
-            throw createBusinessError({
-              code: 'FORBIDDEN',
-              message: 'You do not have access to this organization',
-              errorCode: 'AUTH:RBAC:INSUFFICIENT',
-            });
+            throw insufficientRoleError('MEMBER', 'NONE');
           }
         }
       }

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { router, orgMemberProcedure, mspTechMutationProcedure } from '../trpc/init';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
+import { createBusinessError, offeringUnavailableError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 
 /**
@@ -121,24 +121,11 @@ export const licenseRouter = router({
 
       // Validate productOfferingId BEFORE any writes
       if (!license.productOfferingId) {
-        throw createBusinessError({
-          code: 'PRECONDITION_FAILED',
-          message: 'License has no associated product offering',
-          errorCode: 'CATALOG:OFFERING:UNAVAILABLE',
-        });
+        throw offeringUnavailableError();
       }
 
       if (input.newQuantity <= license.quantity) {
-        throw createBusinessError({
-          code: 'BAD_REQUEST',
-          message: 'New quantity must be greater than current quantity for scale-up',
-          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
-          recovery: {
-            action: 'NONE',
-            label: 'Adjust quantity',
-            params: { min: license.quantity + 1, max: license.productOffering?.maxQuantity, requested: input.newQuantity },
-          },
-        });
+        throw quantityOutOfRangeError(license.quantity + 1, license.productOffering?.maxQuantity ?? null, input.newQuantity);
       }
 
       if (license.productOffering?.maxQuantity && input.newQuantity > license.productOffering.maxQuantity) {
@@ -215,16 +202,7 @@ export const licenseRouter = router({
       }
 
       if (input.newQuantity >= license.quantity) {
-        throw createBusinessError({
-          code: 'BAD_REQUEST',
-          message: 'New quantity must be less than current quantity for scale-down',
-          errorCode: 'LICENSE:QUANTITY:OUT_OF_RANGE',
-          recovery: {
-            action: 'NONE',
-            label: 'Adjust quantity',
-            params: { min: 0, max: license.quantity - 1, requested: input.newQuantity },
-          },
-        });
+        throw quantityOutOfRangeError(0, license.quantity - 1, input.newQuantity);
       }
 
       if (license.productOffering?.minQuantity && input.newQuantity < license.productOffering.minQuantity) {
