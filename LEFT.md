@@ -187,8 +187,10 @@
 ### 37. No Dark Mode
 - No theme toggle. Light mode only.
 
-### 38. No User Profile Menu
-- No avatar dropdown in the header for profile settings, theme toggle, or sign-out.
+### 38. ~~No User Profile Menu~~ ✅ DONE
+- **File:** `src/app/(dashboard)/user-profile-menu.tsx`, `src/server/routers/user.ts`
+- **Status:** IMPLEMENTED
+- Avatar/initials dropdown in dashboard header (desktop + mobile). Shows user name, email, current organization name, and sign-out button. Uses `user.me` tRPC query for profile data. Click-outside and Escape key close the dropdown. Follows existing org-switcher dropdown patterns.
 
 ### 39. No Notifications System
 - No bell icon, no in-app notifications, no email notifications for important events (invitation received, subscription expiring, waste alert triggered).
