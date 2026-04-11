@@ -72,9 +72,14 @@ const mockCreateSubscription = vi.hoisted(() =>
   }),
 );
 
+const mockCancelSubscription = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
+
 vi.mock('@/adapters', () => ({
   getAdapter: vi.fn().mockReturnValue({
     createSubscription: mockCreateSubscription,
+    cancelSubscription: mockCancelSubscription,
   }),
   decryptCredentials: vi.fn().mockReturnValue({ clientId: 'id', clientSecret: 'secret' }),
 }));
@@ -211,6 +216,12 @@ function makeMockSubscription(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2024-01-01'),
     bundle: { id: VALID_CUID_2, name: 'Microsoft 365 Business Basic' },
     licenses: [],
+    vendorConnection: {
+      id: 'vc-1',
+      vendorType: 'PAX8',
+      status: 'ACTIVE',
+      credentials: 'encrypted-creds',
+    },
     ...overrides,
   };
 }
