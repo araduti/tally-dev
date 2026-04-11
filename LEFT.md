@@ -31,15 +31,15 @@
 - **Status:** NOT IMPLEMENTED
 - `inviteMember()` and `revokeInvitation()` exist, but `acceptInvitation()` (transforms Invitation → Member) and `rejectInvitation()` (marks Invitation as REJECTED) are completely missing. Invited users have no way to join an organization.
 
-### 6. No Dockerfile — Cannot Build for Production
-- **File:** _(missing)_ — no `Dockerfile` or `.dockerignore` in root
-- **Status:** NOT IMPLEMENTED
-- The app cannot be containerized or deployed. No production image build pipeline exists.
+### 6. ~~No Dockerfile — Cannot Build for Production~~ ✅ DONE
+- **File:** `Dockerfile`, `.dockerignore`
+- **Status:** IMPLEMENTED
+- Multi-stage build (deps → build → runner) with `node:24-alpine`, non-root user, standalone output.
 
-### 7. No CI/CD Workflows
-- **File:** `.github/workflows/` — directory is empty
-- **Status:** NOT IMPLEMENTED
-- No lint, test, build, or deploy workflow files exist. All quality gates are manual.
+### 7. ~~No CI/CD Workflows~~ ✅ DONE
+- **File:** `.github/workflows/ci.yml`
+- **Status:** IMPLEMENTED
+- CI pipeline: lint+typecheck → unit tests → build. Runs on push/PR to main.
 
 ### 8. No E2E Tests
 - **File:** `playwright.config.ts` → `testDir: './tests/e2e'`
@@ -80,10 +80,10 @@
 - **Status:** NOT IMPLEMENTED
 - No "Forgot Password" link. No password-reset flow, email, or token verification.
 
-### 15. No Next.js Middleware (Edge Auth / Security Headers)
-- **File:** _(missing)_ — no `src/middleware.ts`
-- **Status:** NOT IMPLEMENTED
-- No edge-level auth redirect, no Content-Security-Policy, no X-Frame-Options, no HSTS, no security headers of any kind.
+### 15. ~~No Next.js Middleware (Edge Auth / Security Headers)~~ ✅ DONE
+- **File:** `src/middleware.ts`
+- **Status:** IMPLEMENTED
+- Security headers (CSP, X-Frame-Options, HSTS, etc.), auth redirects, session cookie check.
 
 ### 16. Vendor Adapter Tests — 0% Coverage
 - **Files:** `src/adapters/pax8.ts`, `ingram.ts`, `tdsynnex.ts`, `direct.ts`
@@ -202,8 +202,10 @@
 ### 44. Invitation Resend Missing
 - Can revoke invitations but cannot resend expired or stale invitations.
 
-### 45. No Health-Check Endpoint
-- No `/api/health` route for load-balancer probes or container orchestration readiness checks.
+### 45. ~~No Health-Check Endpoint~~ ✅ DONE
+- **File:** `src/app/api/health/route.ts`
+- **Status:** IMPLEMENTED
+- GET `/api/health` returns `{ status: 'ok', timestamp }` for load balancer probes.
 
 ### 46. No Logging Infrastructure
 - No structured logging (Winston/Pino). Console.log only. No log aggregation.
@@ -221,9 +223,9 @@
 - **File:** `src/adapters/index.ts`
 - `getAdapter()` throws at runtime if a `VendorType` has no registered adapter. No compile-time check ensures all enum values are covered.
 
-### 51. next.config.ts Is Empty
+### 51. ~~next.config.ts Is Empty~~ ✅ PARTIALLY DONE
 - **File:** `next.config.ts`
-- No security headers, image optimization config, redirects, or compression settings.
+- **Status:** `output: 'standalone'` configured for Docker builds. Security headers moved to middleware.
 
 ### 52. No Test Coverage Reporting
 - **File:** `vitest.config.ts`
@@ -239,9 +241,10 @@
 ### 55. No .env Validation at Runtime
 - No Zod schema or `envalid` check that all required environment variables are set before the app starts.
 
-### 56. docker-compose.yml — No Health Checks
+### 56. ~~docker-compose.yml — No Health Checks~~ ✅ DONE
 - **File:** `docker-compose.yml`
-- PostgreSQL, Redis, and Garage services have no `healthcheck` directives.
+- **Status:** IMPLEMENTED
+- Health checks added for PostgreSQL (`pg_isready`) and Redis (`redis-cli ping`). Garage uses scratch image (no shell for healthcheck).
 
 ### 57. No Database Migration Strategy
 - Using `prisma db push` for schema sync. No `prisma migrate` workflow, no migration history, no rollback plan.
@@ -255,11 +258,11 @@
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0 — Critical** | 9 | Core logic broken, no deployment, no CI/CD, no E2E tests |
-| **P1 — High** | 9 | Major features incomplete, no security middleware, no adapter tests |
+| **P0 — Critical** | 9 (2 done) | Core logic broken, ~~no deployment~~, ~~no CI/CD~~, no E2E tests |
+| **P1 — High** | 9 (1 done) | Major features incomplete, ~~no security middleware~~, no adapter tests |
 | **P2 — Medium** | 16 | Incomplete UI, missing filters, no OAuth, no persistence |
-| **P3 — Low** | 24 | Polish, DX, monitoring, nice-to-haves |
-| **Total** | **58** | |
+| **P3 — Low** | 24 (3 done) | Polish, DX, monitoring, nice-to-haves |
+| **Total** | **58 (6 done)** | |
 
 ### By Layer
 
