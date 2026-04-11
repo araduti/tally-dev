@@ -77,9 +77,9 @@ vi.mock('@/lib/rls-proxy', () => ({
   createRLSProxy: vi.fn(() => rlsDb),
 }));
 
-// Replace orgOwnerMutationProcedure with orgOwnerProcedure so the
+// Replace mutation procedures with their query-only counterparts so the
 // idempotency guard (which cannot access `input` via createCaller in
-// tRPC v11) is bypassed. RBAC is still enforced via orgOwnerProcedure.
+// tRPC v11) is bypassed. RBAC is still enforced via the query procedures.
 vi.mock('@/server/trpc/init', async () => {
   const actual = await vi.importActual<typeof import('@/server/trpc/init')>(
     '@/server/trpc/init',
@@ -87,6 +87,7 @@ vi.mock('@/server/trpc/init', async () => {
   return {
     ...actual,
     orgOwnerMutationProcedure: actual.orgOwnerProcedure,
+    authenticatedMutationProcedure: actual.authenticatedProcedure,
   };
 });
 
@@ -164,6 +165,40 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
+  };
+  return adminRouter.createCaller(ctx);
+}
+
+/**
+ * Create an authenticated caller WITHOUT org context.
+ * Used for acceptInvitation / rejectInvitation which use
+ * authenticatedMutationProcedure (no org required).
+ */
+function createAuthOnlyCaller(email: string = 'newuser@example.com') {
+  prisma.session.findUnique.mockResolvedValue({
+    id: 'session-1',
+    token: SESSION_TOKEN,
+    userId: USER_ID,
+    expiresAt: new Date(Date.now() + 3_600_000),
+    activeOrganizationId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    user: { id: USER_ID, email, platformRole: null },
+  });
+
+  const ctx = {
+    headers: createAuthHeaders(),
+    userId: USER_ID,
+    organizationId: null as string | null,
+    effectiveRole: {
+      platformRole: null,
+      mspRole: null,
+      orgRole: null,
+    },
+    db: buildDbProxy(),
+    traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return adminRouter.createCaller(ctx);
 }
@@ -202,6 +237,7 @@ function makeMockAuditLog(overrides: Record<string, unknown> = {}) {
 function makeMockInvitation(overrides: Record<string, unknown> = {}) {
   return {
     id: VALID_CUID_2,
+    organizationId: ORG_ID,
     email: 'newuser@example.com',
     orgRole: 'ORG_MEMBER',
     mspRole: null,
@@ -775,6 +811,324 @@ describe('adminRouter', () => {
           status: 'REVOKED',
         },
       });
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  acceptInvitation
+  // ─────────────────────────────────────
+  describe('acceptInvitation', () => {
+    function setupAcceptMocks(invitationOverrides: Record<string, unknown> = {}) {
+      const invitation = makeMockInvitation(invitationOverrides);
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: invitation.email,
+      });
+      prisma.member.findUnique.mockResolvedValue(null); // not already a member
+
+      const newMember = {
+        id: 'member-new',
+        organizationId: invitation.organizationId,
+        userId: USER_ID,
+        orgRole: invitation.orgRole,
+        mspRole: invitation.mspRole,
+      };
+      const acceptedInvitation = {
+        ...invitation,
+        status: 'ACCEPTED',
+      };
+
+      prisma.member.create.mockResolvedValue(newMember);
+      prisma.invitation.update.mockResolvedValue(acceptedInvitation);
+
+      // $transaction is a top-level Prisma client method — not model-level,
+      // so the Proxy doesn't create it automatically. Set it directly.
+      prisma.$transaction = vi.fn().mockImplementation(
+        async (ops: Promise<unknown>[]) => Promise.all(ops),
+      );
+      prisma.auditLog.create.mockResolvedValue({});
+      return invitation;
+    }
+
+    it('accepts a valid pending invitation and creates a member', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      setupAcceptMocks();
+
+      const result = await caller.acceptInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.member).toBeDefined();
+      expect(result.member.organizationId).toBe(ORG_ID);
+      expect(result.member.orgRole).toBe('ORG_MEMBER');
+      expect(result.invitation.status).toBe('ACCEPTED');
+    });
+
+    it('creates member with the role specified in the invitation', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      setupAcceptMocks({ orgRole: null, mspRole: 'MSP_ADMIN' });
+
+      const result = await caller.acceptInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.member.mspRole).toBe('MSP_ADMIN');
+    });
+
+    it('throws NOT_FOUND when invitation does not exist', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      prisma.invitation.findUnique.mockResolvedValue(null);
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message: 'Invitation not found',
+      });
+    });
+
+    it('throws FORBIDDEN when invitation email does not match user', async () => {
+      const caller = createAuthOnlyCaller('wrong@example.com');
+      const invitation = makeMockInvitation();
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'wrong@example.com',
+      });
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'This invitation is not for your account',
+      });
+    });
+
+    it('throws BAD_REQUEST when invitation is not PENDING', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation({ status: 'REVOKED' });
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+    });
+
+    it('throws PRECONDITION_FAILED when invitation has expired', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation({
+        expiresAt: new Date(Date.now() - 24 * 60 * 60 * 1000), // expired yesterday
+      });
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'PRECONDITION_FAILED',
+      });
+    });
+
+    it('throws CONFLICT when user is already a member', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation();
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+      prisma.member.findUnique.mockResolvedValue({
+        id: 'existing-member',
+        organizationId: ORG_ID,
+        userId: USER_ID,
+        orgRole: 'ORG_MEMBER',
+        mspRole: null,
+      });
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'CONFLICT',
+        message: 'You are already a member of this organization',
+      });
+    });
+
+    it('writes audit log with admin.invitation_accepted action', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      setupAcceptMocks();
+
+      await caller.acceptInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          action: 'admin.invitation_accepted',
+          entityId: VALID_CUID_2,
+        }),
+      });
+    });
+
+    it('rejects invalid invitationId format', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+
+      await expect(
+        caller.acceptInvitation({
+          invitationId: 'not-a-cuid',
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
+  // ─────────────────────────────────────
+  //  rejectInvitation
+  // ─────────────────────────────────────
+  describe('rejectInvitation', () => {
+    it('rejects a valid pending invitation', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation();
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+      prisma.invitation.update.mockResolvedValue({
+        ...invitation,
+        status: 'REJECTED',
+      });
+      prisma.auditLog.create.mockResolvedValue({});
+
+      const result = await caller.rejectInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(result.invitation.status).toBe('REJECTED');
+    });
+
+    it('throws NOT_FOUND when invitation does not exist', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      prisma.invitation.findUnique.mockResolvedValue(null);
+
+      await expect(
+        caller.rejectInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+        message: 'Invitation not found',
+      });
+    });
+
+    it('throws FORBIDDEN when invitation email does not match user', async () => {
+      const caller = createAuthOnlyCaller('other@example.com');
+      const invitation = makeMockInvitation();
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'other@example.com',
+      });
+
+      await expect(
+        caller.rejectInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'This invitation is not for your account',
+      });
+    });
+
+    it('throws BAD_REQUEST when invitation is not PENDING', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation({ status: 'ACCEPTED' });
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+
+      await expect(
+        caller.rejectInvitation({
+          invitationId: VALID_CUID_2,
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toMatchObject({
+        code: 'BAD_REQUEST',
+      });
+    });
+
+    it('writes audit log with admin.invitation_rejected action', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+      const invitation = makeMockInvitation();
+      prisma.invitation.findUnique.mockResolvedValue(invitation);
+      prisma.user.findUnique.mockResolvedValue({
+        id: USER_ID,
+        email: 'newuser@example.com',
+      });
+      prisma.invitation.update.mockResolvedValue({
+        ...invitation,
+        status: 'REJECTED',
+      });
+      prisma.auditLog.create.mockResolvedValue({});
+
+      await caller.rejectInvitation({
+        invitationId: VALID_CUID_2,
+        idempotencyKey: VALID_UUID,
+      });
+
+      expect(prisma.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: ORG_ID,
+          userId: USER_ID,
+          action: 'admin.invitation_rejected',
+          entityId: VALID_CUID_2,
+        }),
+      });
+    });
+
+    it('rejects invalid invitationId format', async () => {
+      const caller = createAuthOnlyCaller('newuser@example.com');
+
+      await expect(
+        caller.rejectInvitation({
+          invitationId: 'not-a-cuid',
+          idempotencyKey: VALID_UUID,
+        }),
+      ).rejects.toThrow();
     });
   });
 });

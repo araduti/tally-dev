@@ -23,7 +23,9 @@
 // Both blocks are hoisted above all imports by vitest.
 // ──────────────────────────────────────────────
 
-const { prisma, rlsDb, buildDbProxy } = vi.hoisted(() => {
+const { prisma, rlsDb, buildDbProxy, mockSetQuantity, mockInngestSend } = vi.hoisted(() => {
+  const mockSetQuantity = vi.fn().mockResolvedValue(undefined);
+  const mockInngestSend = vi.fn().mockResolvedValue({ ids: ['mock-event-id'] });
   function createModelProxy(): any {
     const store: Record<string, any> = {};
     return new Proxy(store, {
@@ -46,8 +48,12 @@ const { prisma, rlsDb, buildDbProxy } = vi.hoisted(() => {
     });
   }
 
-  return { prisma: buildDbProxy(), rlsDb: buildDbProxy(), buildDbProxy };
+  return { prisma: buildDbProxy(), rlsDb: buildDbProxy(), buildDbProxy, mockSetQuantity, mockInngestSend };
 });
+
+vi.mock('@/inngest/client', () => ({
+  inngest: { send: mockInngestSend },
+}));
 
 vi.mock('@/lib/db', () => ({ prisma }));
 
@@ -72,6 +78,27 @@ vi.mock('@/lib/rls-proxy', () => ({
   createRLSProxy: vi.fn(() => rlsDb),
 }));
 
+vi.mock('@/adapters', () => ({
+  getAdapter: vi.fn(() => ({
+    setQuantity: mockSetQuantity,
+  })),
+  decryptCredentials: vi.fn(() => ({ clientId: 'id', clientSecret: 'secret' })),
+}));
+
+vi.mock('@/adapters/types', () => {
+  class VendorError extends Error {
+    constructor(
+      public readonly vendorType: string,
+      public readonly originalError: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Vendor API error from ${vendorType}`);
+      this.name = 'VendorError';
+    }
+  }
+  return { VendorError };
+});
+
 // Replace mspTechMutationProcedure with mspTechProcedure so the
 // idempotency guard (which cannot access `input` via createCaller in
 // tRPC v11) is bypassed. RBAC is still enforced via mspTechProcedure.
@@ -87,6 +114,7 @@ vi.mock('@/server/trpc/init', async () => {
 
 import { TRPCError } from '@trpc/server';
 import { writeAuditLog } from '@/lib/audit';
+import { getAdapter, decryptCredentials } from '@/adapters';
 import { licenseRouter } from '../license';
 
 // ──────────────────────────────────────────────
@@ -158,6 +186,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return licenseRouter.createCaller(ctx);
 }
@@ -178,8 +207,14 @@ function makeMockLicense(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2024-01-01'),
     subscription: {
       id: VALID_CUID_2,
+      externalId: 'ext-sub-001',
       commitmentEndDate: null,
       bundle: { id: 'bundle-1', name: 'Microsoft 365 Business Basic' },
+      vendorConnection: {
+        id: 'vc-1',
+        vendorType: 'PAX8',
+        credentials: 'encrypted-creds',
+      },
     },
     productOffering: {
       id: VALID_CUID_3,
@@ -539,7 +574,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:NOT_FOUND');
       }
     });
@@ -750,7 +785,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
       }
     });
@@ -902,8 +937,14 @@ describe('licenseRouter', () => {
         inngestRunId: null,
         subscription: {
           id: VALID_CUID_2,
+          externalId: 'ext-sub-001',
           commitmentEndDate: null,
           bundle: { id: 'bundle-1', name: 'Microsoft 365 Business Basic' },
+          vendorConnection: {
+            id: 'vc-1',
+            vendorType: 'PAX8',
+            credentials: 'encrypted-creds',
+          },
           ...overrides.subscription,
         },
         ...overrides.license,
@@ -1105,7 +1146,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
       }
     });
@@ -1177,7 +1218,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:SCALE_DOWN:PENDING');
       }
     });
@@ -1200,7 +1241,7 @@ describe('licenseRouter', () => {
         });
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         const recovery = cause.recovery as Record<string, unknown>;
         expect(recovery.action).toBe('REVIEW_QUEUE');
         expect(recovery.params).toEqual(
@@ -1406,7 +1447,7 @@ describe('licenseRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:SCALE_DOWN:NO_PENDING');
       }
     });

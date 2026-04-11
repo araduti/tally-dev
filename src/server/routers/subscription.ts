@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { router, orgMemberProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { SubscriptionStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
-import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError, offeringUnavailableError, offeringPriceMissingError, quantityOutOfRangeError } from '@/lib/errors';
+import { createBusinessError, dpaNotAcceptedError, provisioningDisabledError, offeringUnavailableError, offeringPriceMissingError, quantityOutOfRangeError, vendorUpstreamError } from '@/lib/errors';
 import Decimal from 'decimal.js';
+import { getAdapter, decryptCredentials } from '@/adapters';
+import { VendorError } from '@/adapters/types';
 
 export const subscriptionRouter = router({
   list: orgMemberProcedure
@@ -138,15 +140,35 @@ export const subscriptionRouter = router({
         });
       }
 
-      // Create subscription, license, and purchase transaction
-      const externalId = `tally-${crypto.randomUUID()}`;
+      // Provision subscription on the vendor BEFORE creating local records.
+      // If the vendor rejects, we fail fast without creating orphan records.
+      const adapter = getAdapter(vendorConnection.vendorType);
+      const credentials = decryptCredentials(vendorConnection.credentials);
 
+      let vendorSubscription;
+      try {
+        vendorSubscription = await adapter.createSubscription(
+          credentials,
+          offering.externalSku,
+          input.quantity,
+        );
+      } catch (error: unknown) {
+        if (error instanceof VendorError) {
+          throw vendorUpstreamError(vendorConnection.vendorType);
+        }
+        throw error;
+      }
+
+      // Create subscription, license, and purchase transaction
       const subscription = await ctx.db.subscription.create({
         data: {
           vendorConnectionId: vendorConnection.id,
           bundleId: offering.bundleId,
-          externalId,
+          externalId: vendorSubscription.externalId,
           status: 'ACTIVE',
+          ...(vendorSubscription.commitmentEndDate
+            ? { commitmentEndDate: vendorSubscription.commitmentEndDate }
+            : {}),
         },
       });
 
@@ -190,6 +212,7 @@ export const subscriptionRouter = router({
     .mutation(async ({ ctx, input }) => {
       const subscription = await ctx.db.subscription.findFirst({
         where: { id: input.subscriptionId },
+        include: { vendorConnection: true },
       });
 
       if (!subscription) {
@@ -224,7 +247,18 @@ export const subscriptionRouter = router({
         return { subscription: updated, scheduledDate: subscription.commitmentEndDate };
       }
 
-      // Immediate cancellation
+      // Immediate cancellation — cancel on vendor first, then update locally.
+      const adapter = getAdapter(subscription.vendorConnection.vendorType);
+      const credentials = decryptCredentials(subscription.vendorConnection.credentials);
+      try {
+        await adapter.cancelSubscription(credentials, subscription.externalId);
+      } catch (error: unknown) {
+        if (error instanceof VendorError) {
+          throw vendorUpstreamError(subscription.vendorConnection.vendorType);
+        }
+        throw error;
+      }
+
       const updated = await ctx.db.subscription.update({
         where: { id: subscription.id },
         data: { status: 'CANCELLED' },

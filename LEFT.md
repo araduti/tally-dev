@@ -6,30 +6,30 @@
 
 ## 🔴 P0 — Critical (Core Business Logic Broken)
 
-### 1. Catalog Sync Does Not Persist Products
+### 1. ~~Catalog Sync Does Not Persist Products~~ ✅ DONE
 - **File:** `src/inngest/functions/catalog-sync.ts`
-- **Status:** STUB
-- `adapter.getProductCatalog()` is called and catalog data is returned, but only `VendorConnection.lastSyncAt` is updated. No loop upserts catalog items into the `ProductOffering` table. Products never appear in the marketplace after a sync.
+- **Status:** IMPLEMENTED
+- Catalog sync now upserts `Bundle` + `ProductOffering` records for each `VendorCatalogEntry`. Uses `globalSkuId` for cross-distributor matching. Audit log includes `persisted` count.
 
-### 2. Subscription Create Never Provisions on Vendor
+### 2. ~~Subscription Create Never Provisions on Vendor~~ ✅ DONE
 - **File:** `src/server/routers/subscription.ts` (create mutation)
-- **Status:** PARTIAL
-- `subscription.create()` creates local `Subscription` + `License` records but never calls `adapter.createSubscription()`. The vendor/distributor has no knowledge of the subscription and cannot fulfill or bill it.
+- **Status:** IMPLEMENTED
+- `subscription.create()` now calls `adapter.createSubscription()` before creating local records. Uses the vendor's real `externalId` and stores `commitmentEndDate` when provided.
 
-### 3. License Scale Operations Don't Call Vendor API
+### 3. ~~License Scale Operations Don't Call Vendor API~~ ✅ DONE
 - **File:** `src/server/routers/license.ts` (scaleUp / scaleDown mutations)
-- **Status:** PARTIAL
-- Both `scaleUp` and `scaleDown` update local `License.quantity` and create `PurchaseTransaction` records but never call `adapter.setQuantity()`. Vendor systems remain out of sync.
+- **Status:** IMPLEMENTED
+- Both `scaleUp` and `scaleDown` now call `adapter.setQuantity()` before updating local records. Vendor-first pattern ensures consistency. Staged (committed) scale-downs still defer to Inngest workflow.
 
-### 4. Subscription Cancellation Never Calls Vendor
+### 4. ~~Subscription Cancellation Never Calls Vendor~~ ✅ DONE
 - **File:** `src/server/routers/subscription.ts` (cancel mutation)
-- **Status:** PARTIAL
-- Updates local status to `SUSPENDED` or `CANCELLED` but never calls `adapter.cancelSubscription()`. Vendor continues billing the organization.
+- **Status:** IMPLEMENTED
+- Immediate cancellation now calls `adapter.cancelSubscription()` before updating local status. Scheduled cancellation (during commitment) still only sets `SUSPENDED` locally.
 
-### 5. Invitation Accept/Reject Procedures Missing
+### 5. ~~Invitation Accept/Reject Procedures Missing~~ ✅ DONE
 - **File:** `src/server/routers/admin.ts`
-- **Status:** NOT IMPLEMENTED
-- `inviteMember()` and `revokeInvitation()` exist, but `acceptInvitation()` (transforms Invitation → Member) and `rejectInvitation()` (marks Invitation as REJECTED) are completely missing. Invited users have no way to join an organization.
+- **Status:** IMPLEMENTED
+- `acceptInvitation()` validates invitation (email match, PENDING status, not expired, not already a member), creates `Member` + updates `Invitation` atomically via `$transaction`, and writes audit log. `rejectInvitation()` validates and updates status to `REJECTED`. Both use `authenticatedMutationProcedure` (no org context required).
 
 ### 6. ~~No Dockerfile — Cannot Build for Production~~ ✅ DONE
 - **File:** `Dockerfile`, `.dockerignore`

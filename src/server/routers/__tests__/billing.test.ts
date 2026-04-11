@@ -118,6 +118,7 @@ function createTestContext(overrides: Record<string, any> = {}) {
     },
     db,
     traceId: 'test-trace-id',
+    resHeaders: null,
     ...overrides,
   };
 }

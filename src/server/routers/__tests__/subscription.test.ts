@@ -64,6 +64,40 @@ vi.mock('@/lib/encryption', () => ({
   decrypt: vi.fn().mockReturnValue('decrypted'),
 }));
 
+const mockCreateSubscription = vi.hoisted(() =>
+  vi.fn().mockResolvedValue({
+    externalId: 'vendor-ext-001',
+    status: 'active',
+    quantity: 10,
+  }),
+);
+
+const mockCancelSubscription = vi.hoisted(() =>
+  vi.fn().mockResolvedValue(undefined),
+);
+
+vi.mock('@/adapters', () => ({
+  getAdapter: vi.fn().mockReturnValue({
+    createSubscription: mockCreateSubscription,
+    cancelSubscription: mockCancelSubscription,
+  }),
+  decryptCredentials: vi.fn().mockReturnValue({ clientId: 'id', clientSecret: 'secret' }),
+}));
+
+vi.mock('@/adapters/types', () => {
+  class VendorError extends Error {
+    constructor(
+      public readonly vendorType: string,
+      public readonly originalError: unknown,
+      message?: string,
+    ) {
+      super(message ?? `Vendor API error from ${vendorType}`);
+      this.name = 'VendorError';
+    }
+  }
+  return { VendorError };
+});
+
 vi.mock('@/lib/redis', () => ({
   redis: {
     get: vi.fn().mockResolvedValue(null),
@@ -162,6 +196,7 @@ function createAuthedCaller(orgRole: string = 'ORG_OWNER') {
     },
     db: buildDbProxy(),
     traceId: 'test-trace-id',
+    resHeaders: null,
   };
   return subscriptionRouter.createCaller(ctx);
 }
@@ -182,6 +217,12 @@ function makeMockSubscription(overrides: Record<string, unknown> = {}) {
     updatedAt: new Date('2024-01-01'),
     bundle: { id: VALID_CUID_2, name: 'Microsoft 365 Business Basic' },
     licenses: [],
+    vendorConnection: {
+      id: 'vc-1',
+      vendorType: 'PAX8',
+      status: 'ACTIVE',
+      credentials: 'encrypted-creds',
+    },
     ...overrides,
   };
 }
@@ -539,7 +580,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('SUBSCRIPTION:LIFECYCLE:NOT_FOUND');
       }
     });
@@ -592,6 +633,7 @@ describe('subscriptionRouter', () => {
         id: 'vc-1',
         vendorType: offering.sourceType,
         status: 'ACTIVE',
+        credentials: 'encrypted-credentials',
       });
 
       // DB creates (via ctx.db → rlsDb)
@@ -787,7 +829,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('COMPLIANCE:DPA:NOT_ACCEPTED');
       }
     });
@@ -861,7 +903,7 @@ describe('subscriptionRouter', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
         expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('CATALOG:OFFERING:PRICE_MISSING');
         expect(cause.recovery).toEqual(
           expect.objectContaining({ action: 'FORCE_SYNC' }),
@@ -922,7 +964,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('LICENSE:QUANTITY:OUT_OF_RANGE');
         const recovery = cause.recovery as Record<string, unknown>;
         expect(recovery.params).toEqual(
@@ -978,7 +1020,7 @@ describe('subscriptionRouter', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
         expect((error as TRPCError).code).toBe('PRECONDITION_FAILED');
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('VENDOR:AUTH:DISCONNECTED');
         expect(cause.recovery).toEqual(
           expect.objectContaining({
@@ -1289,7 +1331,7 @@ describe('subscriptionRouter', () => {
         expect.fail('Expected TRPCError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(TRPCError);
-        const cause = (error as TRPCError).cause as Record<string, unknown>;
+        const cause = (error as TRPCError).cause as unknown as Record<string, unknown>;
         expect(cause.errorCode).toBe('SUBSCRIPTION:LIFECYCLE:NOT_FOUND');
       }
     });
