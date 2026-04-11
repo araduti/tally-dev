@@ -155,7 +155,7 @@ function ProjectedInvoice() {
               const commitDate = item.commitmentEndDate ? new Date(item.commitmentEndDate) : null;
 
               return (
-                <tr key={`${item.subscriptionId}-${index}`} className="hover:bg-slate-700/30 transition">
+                <tr key={`${item.subscriptionId}-${item.bundleName}-${index}`} className="hover:bg-slate-700/30 transition">
                   <td className="px-6 py-4 text-sm text-white font-medium">{item.bundleName}</td>
                   <td className="px-6 py-4 text-sm text-slate-300">{item.vendorType}</td>
                   <td className="px-6 py-4 text-sm text-slate-300">
