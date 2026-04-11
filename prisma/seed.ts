@@ -1,7 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 import { Decimal } from "decimal.js";
+import { hashPassword } from "better-auth/crypto";
 
 const prisma = new PrismaClient();
+
+const ADMIN_EMAIL = "admin@tally.dev";
+const ADMIN_PASSWORD = "admin123";
 
 async function main() {
   // ---------------------------------------------------------------
@@ -9,15 +13,37 @@ async function main() {
   // ---------------------------------------------------------------
   console.log("🌱 Seeding admin user…");
   const adminUser = await prisma.user.upsert({
-    where: { email: "admin@tally.dev" },
+    where: { email: ADMIN_EMAIL },
     update: {},
     create: {
       name: "Tally Admin",
-      email: "admin@tally.dev",
+      email: ADMIN_EMAIL,
       emailVerified: true,
     },
   });
   console.log(`   ✔ User: ${adminUser.name} (${adminUser.id})`);
+
+  // ---------------------------------------------------------------
+  // 1b. Admin Account (email + password credential)
+  // ---------------------------------------------------------------
+  console.log("🌱 Seeding admin account (credential)…");
+  const hashedPassword = await hashPassword(ADMIN_PASSWORD);
+  const existingAccount = await prisma.account.findFirst({
+    where: { userId: adminUser.id, providerId: "credential" },
+  });
+  if (!existingAccount) {
+    await prisma.account.create({
+      data: {
+        accountId: adminUser.id,
+        providerId: "credential",
+        userId: adminUser.id,
+        password: hashedPassword,
+      },
+    });
+    console.log(`   ✔ Account: credential provider created`);
+  } else {
+    console.log(`   ✔ Account: credential provider already exists`);
+  }
 
   // ---------------------------------------------------------------
   // 2. MSP Organization
