@@ -81,12 +81,20 @@ export default async function LicensesPage() {
             Manage seat quantities, scale up/down, and track pending changes
           </p>
         </div>
-        <a
-          href="/licenses/import"
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition"
-        >
-          📤 Import CSV
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href="/licenses/create"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition"
+          >
+            ＋ Create License
+          </a>
+          <a
+            href="/licenses/import"
+            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white text-sm font-medium transition"
+          >
+            📤 Import CSV
+          </a>
+        </div>
       </div>
 
       <Suspense fallback={<LicensesLoadingSkeleton />}>
