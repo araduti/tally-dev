@@ -555,14 +555,20 @@ Access to each router is controlled by the three-tier RBAC model. The table belo
 | `license` (read) | ✅ | 👁 | ✅ | ✅ | 👁 | ✅ | ✅ | 👁 |
 | `license` (write) | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `vendor` (read) | ✅ | 👁 | ✅ | ✅ | 👁 | ✅ | 👁 | ❌ |
-| `vendor` (write) | ✅ | ❌ | ✅ | ✅ | ❌ | 🔑 | ❌ | ❌ |
+| `vendor` (connect/disconnect) | ✅ | ❌ | ✅ | ❌ | ❌ | 🔑 | ❌ | ❌ |
+| `vendor` (syncCatalog) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ |
 | `billing` (read) | ✅ | 👁 | ✅ | ✅ | ❌ | ✅ | ✅ | 👁 |
-| `billing` (write) | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | `admin` | ✅ | 👁 | ✅ | ✅ | ❌ | 🔑 | ❌ | ❌ |
 | `organization` (read) | ✅ | 👁 | ✅ | ✅ | 👁 | ✅ | ✅ | 👁 |
-| `organization` (write) | ✅ | ❌ | ✅ | ❌ | ❌ | 🔑 | ❌ | ❌ |
+| `organization` (update/deactivate/acceptDpa) | ✅ | ❌ | ✅ | ❌ | ❌ | 🔑 | ❌ | ❌ |
+| `organization` (createClient) | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `organization` (switchOrg) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 > **MSP delegation:** When an MSP user's session is scoped to a client org (`Session.activeOrganizationId` = client org), their MSP role grants the access level shown in the matrix above. They do not need a separate `Member` record on the client org.
+>
+> **Note on billing:** The billing router currently has no mutations — all procedures are read-only queries. A `billing (write)` row is omitted until mutation procedures are added.
+>
+> **Note on `organization.switchOrg`:** This mutation uses `authenticatedMutationProcedure` — any authenticated user can call it. Access to the target org is validated dynamically (direct membership, MSP delegation, or platform admin role).
 
 ---
 
