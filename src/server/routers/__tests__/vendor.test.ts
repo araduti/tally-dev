@@ -20,7 +20,7 @@
 // Both blocks are hoisted above all imports by vitest.
 // ──────────────────────────────────────────────
 
-const { prisma, rlsDb, buildDbProxy, mockWriteAuditLog, mockEncrypt } = vi.hoisted(() => {
+const { prisma, rlsDb, buildDbProxy, mockWriteAuditLog, mockEncrypt, mockInngestSend } = vi.hoisted(() => {
   function createModelProxy(): any {
     const store: Record<string, any> = {};
     return new Proxy(store, {
@@ -52,8 +52,13 @@ const { prisma, rlsDb, buildDbProxy, mockWriteAuditLog, mockEncrypt } = vi.hoist
     buildDbProxy,
     mockWriteAuditLog: vi.fn().mockResolvedValue(undefined),
     mockEncrypt: vi.fn().mockReturnValue('encrypted-credentials'),
+    mockInngestSend: vi.fn().mockResolvedValue({ ids: ['mock-event-id'] }),
   };
 });
+
+vi.mock('@/inngest/client', () => ({
+  inngest: { send: mockInngestSend },
+}));
 
 vi.mock('@/lib/db', () => ({ prisma }));
 
