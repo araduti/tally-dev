@@ -80,6 +80,13 @@ export function middleware(request: NextRequest) {
   const isDev = process.env.NODE_ENV === 'development';
   const hasSession = request.cookies.has(SESSION_COOKIE);
 
+  // Authenticated users hitting the landing page → redirect to marketplace
+  if (hasSession && pathname === '/') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/marketplace';
+    return applySecurityHeaders(NextResponse.redirect(url), isDev);
+  }
+
   // Authenticated users hitting auth pages → redirect to marketplace
   if (hasSession && isAuthPath(pathname)) {
     const url = request.nextUrl.clone();
