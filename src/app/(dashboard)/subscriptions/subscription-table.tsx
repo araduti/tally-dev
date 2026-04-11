@@ -232,7 +232,11 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
                           e.stopPropagation();
                           setCancelTarget(sub);
                         }}
-                        onKeyDown={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                          }
+                        }}
                         className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-medium text-white transition"
                         aria-label={`Cancel ${sub.bundle.name} subscription`}
                       >

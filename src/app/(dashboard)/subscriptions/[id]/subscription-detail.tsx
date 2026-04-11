@@ -517,8 +517,11 @@ export function SubscriptionDetail({ subscription: initialSubscription }: Subscr
           <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">
             Total Licenses
           </h3>
-          <p className="text-white font-medium">
-            {totalLicenseQuantity} <span className="text-slate-400 font-normal text-sm">across {sub.licenses.length} {sub.licenses.length === 1 ? 'license' : 'licenses'}</span>
+          <p className="text-white font-medium" aria-label={`${totalLicenseQuantity} seats across ${sub.licenses.length} ${sub.licenses.length === 1 ? 'license' : 'licenses'}`}>
+            {totalLicenseQuantity}{' '}
+            <span className="text-slate-400 font-normal text-sm">
+              across {sub.licenses.length} {sub.licenses.length === 1 ? 'license' : 'licenses'}
+            </span>
           </p>
         </div>
       </div>
