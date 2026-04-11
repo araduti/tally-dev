@@ -1,7 +1,84 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { api } from '@/trpc/client';
+
+// ---------- Sync status helpers ----------
+
+const STALE_SYNC_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/** Returns true when lastSyncAt is more than 24 hours ago. */
+function isSyncStale(lastSyncAt: string | null): boolean {
+  if (!lastSyncAt) return false; // never-synced handled separately
+  return Date.now() - new Date(lastSyncAt).getTime() > STALE_SYNC_THRESHOLD_MS;
+}
+
+/** Human-readable relative time, e.g. "5 minutes ago". */
+function formatRelativeTime(isoString: string): string {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+/** Spinning sync icon (CSS animation). */
+function SyncSpinner() {
+  return (
+    <svg
+      className="animate-spin h-3.5 w-3.5 text-blue-400"
+      xmlns="http://www.w3.org/2000/svg"
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
+/** Warning icon for stale sync. */
+function StaleWarningIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 text-amber-400 flex-shrink-0"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+/** Check icon for success. */
+function CheckIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 text-green-400 flex-shrink-0"
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
 
 // ---------- Serialized types ----------
 
@@ -173,6 +250,259 @@ function OrganizationSection({ initialOrganization }: { initialOrganization: Ser
   );
 }
 
+// ---------- Vendor Connection Card (per-connection sync state) ----------
+
+type SyncUiState = 'idle' | 'enqueuing' | 'enqueued' | 'polling' | 'success' | 'error';
+
+function VendorConnectionCard({
+  conn,
+  onDisconnect,
+  disconnectPending,
+}: {
+  conn: SerializedVendorConnection;
+  onDisconnect: (id: string) => void;
+  disconnectPending: boolean;
+}) {
+  const utils = api.useUtils();
+  const [syncState, setSyncState] = useState<SyncUiState>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [syncTriggeredAt, setSyncTriggeredAt] = useState<string | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevLastSyncAtRef = useRef<string | null>(conn.lastSyncAt);
+
+  const stale = isSyncStale(conn.lastSyncAt);
+  const neverSynced = !conn.lastSyncAt;
+
+  const syncMutation = api.vendor.syncCatalog.useMutation({
+    onSuccess: () => {
+      setSyncState('enqueued');
+      setSyncTriggeredAt(new Date().toISOString());
+      setSyncError(null);
+      // Start polling to detect when the background sync completes
+      startPolling();
+    },
+    onError: (err) => {
+      setSyncState('error');
+      setSyncError(err.message);
+    },
+  });
+
+  // Poll listConnections to detect when lastSyncAt changes (sync complete)
+  const startPolling = useCallback(() => {
+    // Clear existing interval if any
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+    setSyncState('polling');
+    const baselineLastSyncAt = prevLastSyncAtRef.current;
+    let pollCount = 0;
+    const maxPolls = 30; // 30 × 5s = 150s max
+
+    pollingRef.current = setInterval(() => {
+      pollCount++;
+      if (pollCount > maxPolls) {
+        // Stop polling after timeout — sync may still be running
+        if (pollingRef.current) clearInterval(pollingRef.current);
+        pollingRef.current = null;
+        setSyncState('idle');
+        return;
+      }
+      void utils.vendor.listConnections.invalidate();
+    }, 5000);
+
+    // Store baseline to compare against
+    prevLastSyncAtRef.current = baselineLastSyncAt;
+  }, [utils.vendor.listConnections]);
+
+  // Detect sync completion by watching for lastSyncAt changes
+  useEffect(() => {
+    if (syncState !== 'polling' && syncState !== 'enqueued') return;
+
+    const baseline = prevLastSyncAtRef.current;
+    if (conn.lastSyncAt && conn.lastSyncAt !== baseline) {
+      // lastSyncAt updated — sync completed
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      prevLastSyncAtRef.current = conn.lastSyncAt;
+      setSyncState('success');
+      // Clear success indicator after 5 seconds
+      const timer = setTimeout(() => setSyncState('idle'), 5000);
+      return () => clearTimeout(timer);
+    }
+
+    // Also detect ERROR status change during polling
+    if (conn.status === 'ERROR' && syncState === 'polling') {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+      setSyncState('error');
+      setSyncError('Catalog sync failed. Check your credentials and try again.');
+    }
+  }, [conn.lastSyncAt, conn.status, syncState]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleSync = useCallback(() => {
+    setSyncError(null);
+    prevLastSyncAtRef.current = conn.lastSyncAt;
+    syncMutation.mutate({
+      vendorConnectionId: conn.id,
+      idempotencyKey: crypto.randomUUID(),
+    });
+    setSyncState('enqueuing');
+  }, [conn.id, conn.lastSyncAt, syncMutation]);
+
+  const isBusy = syncState === 'enqueuing' || syncState === 'enqueued' || syncState === 'polling';
+
+  return (
+    <div className="p-4 bg-slate-700/30 rounded-lg border border-slate-600/50">
+      {/* Row 1: Vendor name, status badge, and action buttons */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium text-white">{conn.vendorType}</span>
+          <ConnectionStatusBadge status={conn.status} />
+        </div>
+        {conn.status !== 'DISCONNECTED' && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSync}
+              disabled={isBusy || disconnectPending}
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-700 hover:bg-blue-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition"
+              aria-label={`Sync catalog for ${conn.vendorType}`}
+            >
+              {isBusy && <SyncSpinner />}
+              {isBusy ? 'Syncing…' : 'Sync Now'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onDisconnect(conn.id)}
+              disabled={disconnectPending || isBusy}
+              className="px-3 py-1 bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition"
+              aria-label={`Disconnect ${conn.vendorType}`}
+            >
+              Disconnect
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Row 2: Sync status details */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
+        {/* Last sync timestamp */}
+        <div className="text-xs text-slate-400">
+          {conn.lastSyncAt ? (
+            <>
+              Last sync:{' '}
+              <time dateTime={conn.lastSyncAt} title={new Date(conn.lastSyncAt).toLocaleString()}>
+                {formatRelativeTime(conn.lastSyncAt)}
+              </time>
+            </>
+          ) : (
+            <span className="text-slate-500">Never synced</span>
+          )}
+        </div>
+
+        {/* Sync progress indicator */}
+        {syncState === 'enqueuing' && (
+          <span className="inline-flex items-center gap-1 text-xs text-blue-400">
+            <SyncSpinner /> Requesting sync…
+          </span>
+        )}
+        {(syncState === 'enqueued' || syncState === 'polling') && (
+          <span className="inline-flex items-center gap-1 text-xs text-blue-400">
+            <SyncSpinner /> Catalog sync in progress…
+          </span>
+        )}
+        {syncState === 'success' && (
+          <span className="inline-flex items-center gap-1 text-xs text-green-400" role="status">
+            <CheckIcon /> Sync completed successfully
+          </span>
+        )}
+      </div>
+
+      {/* Stale sync warning (DATA:SYNC:STALE) */}
+      {stale && syncState === 'idle' && (
+        <div
+          className="mt-2 flex items-start gap-2 p-2 rounded-md bg-amber-900/20 border border-amber-700/50 text-xs text-amber-300"
+          role="alert"
+          data-error-code="DATA:SYNC:STALE"
+        >
+          <StaleWarningIcon />
+          <span>
+            Catalog data may be outdated — last sync was over 24 hours ago.{' '}
+            <button
+              type="button"
+              onClick={handleSync}
+              className="font-medium text-amber-200 underline underline-offset-2 hover:text-white transition"
+            >
+              Sync Now
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Never-synced prompt */}
+      {neverSynced && conn.status !== 'DISCONNECTED' && syncState === 'idle' && (
+        <div
+          className="mt-2 flex items-start gap-2 p-2 rounded-md bg-blue-900/20 border border-blue-700/50 text-xs text-blue-300"
+          role="status"
+        >
+          <StaleWarningIcon />
+          <span>
+            This connection has never been synced.{' '}
+            <button
+              type="button"
+              onClick={handleSync}
+              className="font-medium text-blue-200 underline underline-offset-2 hover:text-white transition"
+            >
+              Run your first sync
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Sync error with retry */}
+      {syncState === 'error' && syncError && (
+        <div
+          className="mt-2 flex items-start justify-between gap-2 p-2 rounded-md bg-red-900/30 border border-red-700 text-xs text-red-300"
+          role="alert"
+        >
+          <span>{syncError}</span>
+          <button
+            type="button"
+            onClick={handleSync}
+            className="flex-shrink-0 font-medium text-red-200 underline underline-offset-2 hover:text-white transition"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Sync triggered timestamp */}
+      {syncTriggeredAt && isBusy && (
+        <div className="mt-1 text-xs text-slate-500">
+          Sync triggered at{' '}
+          <time dateTime={syncTriggeredAt}>
+            {new Date(syncTriggeredAt).toLocaleTimeString()}
+          </time>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---------- Vendor Connections Section ----------
 
 function VendorConnectionsSection({ initialConnections }: { initialConnections: SerializedVendorConnection[] }) {
@@ -212,12 +542,6 @@ function VendorConnectionsSection({ initialConnections }: { initialConnections: 
     },
   });
 
-  const syncMutation = api.vendor.syncCatalog.useMutation({
-    onSuccess: () => {
-      void utils.vendor.listConnections.invalidate();
-    },
-  });
-
   const handleOpenAddForm = useCallback(() => {
     setShowAddForm(true);
     setAddIdempotencyKey(crypto.randomUUID());
@@ -237,6 +561,13 @@ function VendorConnectionsSection({ initialConnections }: { initialConnections: 
       idempotencyKey: addIdempotencyKey,
     });
   }, [addIdempotencyKey, credentials, vendorType, connectMutation]);
+
+  const handleDisconnect = useCallback((connectionId: string) => {
+    const conn = connections.find((c) => c.id === connectionId);
+    if (conn && window.confirm(`Disconnect ${conn.vendorType}? This will remove stored credentials.`)) {
+      disconnectMutation.mutate({ vendorConnectionId: connectionId, idempotencyKey: crypto.randomUUID() });
+    }
+  }, [connections, disconnectMutation]);
 
   return (
     <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
@@ -324,55 +655,12 @@ function VendorConnectionsSection({ initialConnections }: { initialConnections: 
       ) : (
         <div className="space-y-3">
           {connections.map((conn) => (
-            <div
+            <VendorConnectionCard
               key={conn.id}
-              className="flex items-center justify-between p-3 bg-slate-700/30 rounded-lg border border-slate-600/50"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-white">{conn.vendorType}</span>
-                <ConnectionStatusBadge status={conn.status} />
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="text-xs text-slate-400">
-                  {conn.lastSyncAt ? (
-                    <>
-                      Last sync:{' '}
-                      <time dateTime={conn.lastSyncAt}>
-                        {new Date(conn.lastSyncAt).toLocaleString()}
-                      </time>
-                    </>
-                  ) : (
-                    'Never synced'
-                  )}
-                </div>
-                {conn.status !== 'DISCONNECTED' && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => syncMutation.mutate({ vendorConnectionId: conn.id, idempotencyKey: crypto.randomUUID() })}
-                      disabled={syncMutation.isPending}
-                      className="px-3 py-1 bg-blue-700 hover:bg-blue-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition"
-                      aria-label={`Sync catalog for ${conn.vendorType}`}
-                    >
-                      {syncMutation.isPending ? 'Syncing…' : 'Sync'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm(`Disconnect ${conn.vendorType}? This will remove stored credentials.`)) {
-                          disconnectMutation.mutate({ vendorConnectionId: conn.id, idempotencyKey: crypto.randomUUID() });
-                        }
-                      }}
-                      disabled={disconnectMutation.isPending}
-                      className="px-3 py-1 bg-red-700 hover:bg-red-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded text-xs font-medium text-white transition"
-                      aria-label={`Disconnect ${conn.vendorType}`}
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
+              conn={conn}
+              onDisconnect={handleDisconnect}
+              disconnectPending={disconnectMutation.isPending}
+            />
           ))}
         </div>
       )}
