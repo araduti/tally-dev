@@ -74,11 +74,19 @@ async function LicensesContent() {
 export default async function LicensesPage() {
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">License Management</h1>
-        <p className="mt-1 text-slate-400">
-          Manage seat quantities, scale up/down, and track pending changes
-        </p>
+      <div className="mb-8 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">License Management</h1>
+          <p className="mt-1 text-slate-400">
+            Manage seat quantities, scale up/down, and track pending changes
+          </p>
+        </div>
+        <a
+          href="/licenses/import"
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition"
+        >
+          📤 Import CSV
+        </a>
       </div>
 
       <Suspense fallback={<LicensesLoadingSkeleton />}>

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, orgMemberProcedure, mspTechMutationProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, mspTechMutationProcedure, orgAdminMutationProcedure } from '../trpc/init';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError, offeringUnavailableError, pendingScaleDownExistsError, quantityOutOfRangeError } from '@/lib/errors';
 import { inngest } from '@/inngest/client';
@@ -340,5 +340,120 @@ export const licenseRouter = router({
       });
 
       return { license: updated };
+    }),
+
+  importLicenses: orgAdminMutationProcedure
+    .input(z.object({
+      records: z.array(z.object({
+        productOfferingId: z.string().cuid(),
+        quantity: z.number().int().positive(),
+      })).min(1).max(500),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .output(z.object({
+      imported: z.number().int(),
+      skipped: z.number().int(),
+      results: z.array(z.object({
+        index: z.number().int(),
+        status: z.enum(['SUCCESS', 'SKIPPED', 'ERROR']),
+        licenseId: z.string().nullable(),
+        error: z.string().nullable(),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { prisma } = await import('@/lib/db');
+
+      let imported = 0;
+      let skipped = 0;
+      const results: Array<{
+        index: number;
+        status: 'SUCCESS' | 'SKIPPED' | 'ERROR';
+        licenseId: string | null;
+        error: string | null;
+      }> = [];
+
+      for (let i = 0; i < input.records.length; i++) {
+        const record = input.records[i];
+        try {
+          // Validate offering exists
+          const offering = await prisma.productOffering.findUnique({
+            where: { id: record.productOfferingId },
+            include: { bundle: true },
+          });
+
+          if (!offering) {
+            results.push({ index: i, status: 'SKIPPED', licenseId: null, error: 'Product offering not found' });
+            skipped++;
+            continue;
+          }
+
+          // Check quantity bounds
+          if (offering.minQuantity && record.quantity < offering.minQuantity) {
+            results.push({ index: i, status: 'SKIPPED', licenseId: null, error: `Quantity ${record.quantity} below minimum ${offering.minQuantity}` });
+            skipped++;
+            continue;
+          }
+          if (offering.maxQuantity && record.quantity > offering.maxQuantity) {
+            results.push({ index: i, status: 'SKIPPED', licenseId: null, error: `Quantity ${record.quantity} above maximum ${offering.maxQuantity}` });
+            skipped++;
+            continue;
+          }
+
+          // Find an existing active subscription for this bundle, or create one
+          let subscription = await ctx.db.subscription.findFirst({
+            where: { bundleId: offering.bundleId, status: 'ACTIVE' },
+          });
+
+          if (!subscription) {
+            // Find a vendor connection for this source type
+            const vendorConnection = await ctx.db.vendorConnection.findFirst({
+              where: { vendorType: offering.sourceType },
+            });
+
+            if (!vendorConnection) {
+              results.push({ index: i, status: 'SKIPPED', licenseId: null, error: `No vendor connection for ${offering.sourceType}` });
+              skipped++;
+              continue;
+            }
+
+            subscription = await ctx.db.subscription.create({
+              data: {
+                vendorConnectionId: vendorConnection.id,
+                bundleId: offering.bundleId,
+                externalId: `import-${crypto.randomUUID()}`,
+                status: 'ACTIVE',
+              },
+            });
+          }
+
+          // Create the license
+          const license = await ctx.db.license.create({
+            data: {
+              subscriptionId: subscription.id,
+              productOfferingId: offering.id,
+              quantity: record.quantity,
+            },
+          });
+
+          results.push({ index: i, status: 'SUCCESS', licenseId: license.id, error: null });
+          imported++;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Unexpected error during import';
+          results.push({ index: i, status: 'ERROR', licenseId: null, error: msg });
+          skipped++;
+        }
+      }
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'license.bulk_import',
+        entityId: ctx.organizationId!,
+        after: { imported, skipped, total: input.records.length },
+        traceId: ctx.traceId,
+      });
+
+      return { imported, skipped, results };
     }),
 });
