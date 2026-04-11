@@ -18,16 +18,16 @@ const SESSION_COOKIE = 'better-auth.session_token';
  * Public paths that do NOT require authentication.
  * Static files and `_next` are already excluded by the matcher config below.
  */
-const PUBLIC_PATH_PREFIXES = ['/', '/api/', '/onboarding', '/_next/'] as const;
+const PUBLIC_PATH_PREFIXES = ['/api/', '/onboarding'] as const;
 const AUTH_PATHS = ['/login', '/register'] as const;
 
 function isPublicPath(pathname: string): boolean {
   // Exact match on landing page
   if (pathname === '/') return true;
 
-  // Prefixed matches (API routes, onboarding wizard, Next.js internals)
+  // Prefixed matches (API routes, onboarding wizard)
   for (const prefix of PUBLIC_PATH_PREFIXES) {
-    if (prefix !== '/' && pathname.startsWith(prefix)) return true;
+    if (pathname.startsWith(prefix)) return true;
   }
 
   return false;
@@ -63,10 +63,14 @@ function applySecurityHeaders(
   headers.set('X-Frame-Options', 'DENY');
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  headers.set(
-    'Strict-Transport-Security',
-    'max-age=31536000; includeSubDomains',
-  );
+
+  // HSTS only in production — avoid poisoning the HSTS cache during local dev
+  if (!isDev) {
+    headers.set(
+      'Strict-Transport-Security',
+      'max-age=31536000; includeSubDomains',
+    );
+  }
 
   return response;
 }
