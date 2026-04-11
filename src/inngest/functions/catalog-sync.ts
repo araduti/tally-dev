@@ -1,7 +1,9 @@
+import Decimal from 'decimal.js';
 import { inngest } from '../client';
 import { withTenantContext } from '@/lib/tenant';
 import { createRLSProxy } from '@/lib/rls-proxy';
 import { getAdapter, decryptCredentials } from '@/adapters';
+import { prisma } from '@/lib/db';
 
 /**
  * Maximum length for vendor error messages stored in audit logs.
@@ -52,6 +54,57 @@ export const catalogSync = inngest.createFunction(
           const credentials = decryptCredentials(connection.credentials);
           const catalog = await adapter.getProductCatalog(credentials);
 
+          // Persist catalog entries as Bundle + ProductOffering records.
+          // These are NOT org-scoped models, so we use raw prisma (not the RLS proxy).
+          let persisted = 0;
+          for (const entry of catalog) {
+            const bundle = await prisma.bundle.upsert({
+              where: { globalSkuId: entry.externalSku },
+              create: {
+                globalSkuId: entry.externalSku,
+                name: entry.name,
+                friendlyName: entry.name,
+              },
+              update: {
+                name: entry.name,
+                friendlyName: entry.name,
+              },
+            });
+
+            await prisma.productOffering.upsert({
+              where: {
+                bundleId_sourceType_externalSku: {
+                  bundleId: bundle.id,
+                  sourceType: connection.vendorType,
+                  externalSku: entry.externalSku,
+                },
+              },
+              create: {
+                bundleId: bundle.id,
+                vendorConnectionId: connection.id,
+                sourceType: connection.vendorType,
+                externalSku: entry.externalSku,
+                effectiveUnitCost: new Decimal(entry.unitCost),
+                currency: entry.currency,
+                availability: entry.availability,
+                minQuantity: entry.minQuantity ?? null,
+                maxQuantity: entry.maxQuantity ?? null,
+                lastPricingFetchedAt: new Date(),
+              },
+              update: {
+                vendorConnectionId: connection.id,
+                effectiveUnitCost: new Decimal(entry.unitCost),
+                currency: entry.currency,
+                availability: entry.availability,
+                minQuantity: entry.minQuantity ?? null,
+                maxQuantity: entry.maxQuantity ?? null,
+                lastPricingFetchedAt: new Date(),
+              },
+            });
+
+            persisted++;
+          }
+
           // Update the last sync timestamp
           await db.vendorConnection.update({
             where: { id: vendorConnectionId },
@@ -67,7 +120,7 @@ export const catalogSync = inngest.createFunction(
               userId: null,
               action: 'vendor.catalog_synced',
               entityId: vendorConnectionId,
-              after: { itemCount: catalog.length },
+              after: { itemCount: catalog.length, persisted },
               traceId: traceId ?? null,
             },
           });
