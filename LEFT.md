@@ -127,9 +127,10 @@
 - **File:** `src/app/(dashboard)/subscriptions/`
 - Subscription table exists but rows are not clickable. No detail view, no inline edit, no per-subscription license list.
 
-### 24. Dashboard Insights Are Read-Only
+### 24. ~~Dashboard Insights Are Read-Only~~ ✅ DONE
 - **File:** `src/app/(dashboard)/dashboard-insights.tsx`
-- Recommendations and waste alerts display but have no "Apply", "Dismiss", or "Investigate" action buttons. No way to act on insights.
+- **Status:** IMPLEMENTED
+- Recommendation cards now show "Apply" + "Investigate" buttons (RIGHT_SIZE, COST_OPTIMIZATION) or a single "Investigate" button (COMMITMENT_SUGGESTION). Waste alert cards show "Investigate" + "Dismiss" buttons. "Investigate" links to entity detail pages (subscription detail or license list). "Dismiss" tracks dismissed alerts in local state with a count indicator. Buttons follow existing slate-800 / blue-600 styling conventions.
 
 ### 25. Insights Not Persisted
 - **File:** `src/server/routers/insights.ts`
