@@ -11,7 +11,7 @@
  *   import { getStripeClient, createCheckoutSession, constructWebhookEvent } from '@/lib/stripe';
  *
  *   const stripe = getStripeClient();
- *   if (!stripe) { /* Stripe not configured – skip */ }
+ *   if (!stripe) { // Stripe not configured – skip }
  */
 
 import Stripe from 'stripe';
@@ -42,7 +42,7 @@ export function getStripeClient(): Stripe | null {
 
   stripeClient = new Stripe(secretKey, {
     // Pin to a specific API version for deterministic behavior
-    apiVersion: '2025-04-30.basil',
+    apiVersion: '2026-03-25.dahlia',
     typescript: true,
     appInfo: {
       name: 'Tally',
