@@ -559,6 +559,9 @@ describe('subscriptionRouter — integration', () => {
   // ─────────────────────────────────────────────
   describe('cancel on already-cancelled subscription', () => {
     it('cancel proceeds and calls vendor adapter even for already-cancelled sub', async () => {
+      // The cancel procedure does not guard against re-cancellation.
+      // It re-issues the vendor API call for idempotent vendor-side cleanup
+      // and updates the status to CANCELLED again (no-op transition).
       const caller = createAuthedCaller();
       const cancelledSub = makeMockSubscription({
         id: VALID_CUID,

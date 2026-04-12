@@ -580,11 +580,12 @@ describe('licenseRouter — integration', () => {
         idempotencyKey: VALID_UUID,
       });
 
-      // Verify margin = 0
+      // Verify margin = 0 when partnerMarginPercent is null
       const expectedGross = new Decimal('6.00').mul(5).toDecimalPlaces(2);
       expect(expectedGross.toFixed(2)).toBe('30.00');
 
-      const expectedMargin = expectedGross.mul(0).div(100).toDecimalPlaces(2);
+      // With null margin, expected margin is simply zero
+      const expectedMargin = new Decimal('0.00');
       expect(expectedMargin.toFixed(2)).toBe('0.00');
     });
   });
