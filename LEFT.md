@@ -256,8 +256,10 @@
 ### 48. No Payment Processing (Stripe)
 - README mentions "One-click Buy through Tally" but no Stripe integration, no checkout flow, no webhook handler.
 
-### 49. No OpenAPI / Swagger Documentation
-- tRPC procedures are documented in `docs/API-Reference.md` but no machine-readable OpenAPI spec exists for external consumers.
+### 49. ~~No OpenAPI / Swagger Documentation~~ ✅ DONE
+- **File:** `src/lib/openapi.ts`, `src/app/api/openapi/route.ts`, `src/app/api/docs/route.ts`
+- **Status:** IMPLEMENTED
+- OpenAPI 3.1.0 spec covers all 10 routers (~55 procedures). Served as JSON at `GET /api/openapi` and rendered via Swagger UI at `GET /api/docs`. No new npm dependencies — Swagger UI loads from CDN.
 
 ### 50. ~~Adapter Registry Not Type-Safe~~ ✅ DONE
 - **File:** `src/adapters/index.ts`
