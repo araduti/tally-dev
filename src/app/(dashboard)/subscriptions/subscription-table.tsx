@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/trpc/client';
 
 // ---------- Serialized types ----------
@@ -132,6 +133,7 @@ function CancelDialog({ subscription, onClose, onSuccess }: CancelDialogProps) {
 
 export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: SubscriptionTableProps) {
   const utils = api.useUtils();
+  const router = useRouter();
 
   const { data } = api.subscription.list.useQuery(
     {},
@@ -162,6 +164,10 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
     void utils.subscription.list.invalidate();
   }, [utils]);
 
+  const handleRowClick = useCallback((subscriptionId: string) => {
+    router.push(`/subscriptions/${subscriptionId}`);
+  }, [router]);
+
   return (
     <>
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
@@ -184,9 +190,24 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
               </tr>
             ) : (
               subscriptions.map((sub) => (
-                <tr key={sub.id} className="hover:bg-slate-700/30 transition">
+                <tr
+                  key={sub.id}
+                  className="hover:bg-slate-700/30 transition cursor-pointer"
+                  onClick={() => handleRowClick(sub.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleRowClick(sub.id);
+                    }
+                  }}
+                  tabIndex={0}
+                  role="link"
+                  aria-label={`View details for ${sub.bundle.name} subscription`}
+                >
                   <td className="px-6 py-4 text-sm text-white font-medium">
-                    {sub.bundle.name}
+                    <span className="text-blue-400 hover:text-blue-300">
+                      {sub.bundle.name}
+                    </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-slate-300">
                     {sub.vendorType ?? <span className="text-slate-500">—</span>}
@@ -207,7 +228,15 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
                     {sub.status === 'ACTIVE' && (
                       <button
                         type="button"
-                        onClick={() => setCancelTarget(sub)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCancelTarget(sub);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                          }
+                        }}
                         className="px-3 py-1 bg-red-700 hover:bg-red-600 rounded text-xs font-medium text-white transition"
                         aria-label={`Cancel ${sub.bundle.name} subscription`}
                       >

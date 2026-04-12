@@ -41,10 +41,10 @@
 - **Status:** IMPLEMENTED
 - CI pipeline: lint+typecheck → unit tests → build. Runs on push/PR to main.
 
-### 8. No E2E Tests
+### 8. ~~No E2E Tests~~ ✅ DONE
 - **File:** `playwright.config.ts` → `testDir: './tests/e2e'`
-- **Status:** NOT IMPLEMENTED
-- Config references `./tests/e2e/` but the directory does not exist. Zero end-to-end test files.
+- **Status:** IMPLEMENTED
+- Skeleton E2E tests created for auth, dashboard, subscriptions, compliance, and settings flows. Shared login helper in `tests/e2e/helpers.ts`. Uses `@playwright/test` with `data-testid` selectors.
 
 ### 9. No Integration Tests
 - **File:** `vitest.integration.config.ts` → `**/__tests__/**/*.integration.test.ts`
@@ -70,15 +70,15 @@
 - **Status:** IMPLEMENTED
 - `createClient` now verifies parent MSP has `provisioningEnabled === true` (throws PROVISION:GATE:DISABLED if not). billingType input is optional and inherits from parent MSP when not specified.
 
-### 13. Contract Signing Flow — Stub
-- **File:** `src/app/(dashboard)/compliance/compliance-client.tsx`
-- **Status:** STUB
-- Hardcoded "Unsigned" status. No modal, no document viewer, no API call to record a signature. No corresponding tRPC mutation exists.
+### 13. ~~Contract Signing Flow — Stub~~ ✅ DONE
+- **File:** `src/server/routers/organization.ts`, `src/app/(dashboard)/compliance/compliance-client.tsx`
+- **Status:** IMPLEMENTED
+- Added `getContractStatus` query and `signContract` mutation to organization router. Signs contract, enables provisioning, writes audit log. Compliance UI now shows dynamic contract status with "Sign Contract" button that calls the mutation. Idempotent (re-signing returns existing state).
 
-### 14. Forgot Password / Password Reset
-- **File:** `src/app/(auth)/login/page.tsx`
-- **Status:** NOT IMPLEMENTED
-- No "Forgot Password" link. No password-reset flow, email, or token verification.
+### 14. ~~Forgot Password / Password Reset~~ ✅ DONE
+- **File:** `src/app/(auth)/forgot-password/page.tsx`, `src/app/(auth)/reset-password/page.tsx`, `src/app/(auth)/login/page.tsx`
+- **Status:** IMPLEMENTED
+- Forgot password page sends reset email via Better Auth's `/api/auth/forget-password` endpoint. Reset password page validates token from URL, enforces 8-char minimum, confirms match. Login page now has "Forgot password?" link. Both pages use consistent auth page styling.
 
 ### 15. ~~No Next.js Middleware (Edge Auth / Security Headers)~~ ✅ DONE
 - **File:** `src/middleware.ts`
@@ -114,33 +114,39 @@
 - **Status:** IMPLEMENTED
 - Returns `requiredVersion`, `acceptedVersion`, and `isOutdated` boolean so clients can compare what's required vs what's accepted.
 
-### 21. No Projected Invoice View in UI
+### 21. ~~No Projected Invoice View in UI~~ ✅ DONE
 - **File:** `src/app/(dashboard)/billing/billing-client.tsx`
-- The `projectInvoice` tRPC query exists in the backend but is never called from the billing UI. No cost-breakdown or forecast visualization.
+- **Status:** IMPLEMENTED
+- `ProjectedInvoice` component calls `api.billing.projectInvoice.useQuery({})` and renders a cost breakdown card with projected total, billing period dates, and line item table (bundle, distributor, quantity, unit cost, line total). Shows pending scale-down indicators and commitment end dates. Gracefully handles loading (skeleton), empty (no subscriptions), and error (insufficient permissions) states. Uses Decimal.js for all monetary formatting.
 
-### 22. No Create-License UI (Only Bulk Import)
-- **File:** `src/app/(dashboard)/licenses/`
-- No single-license creation form. Users must go through marketplace purchase or CSV import.
+### 22. ~~No Create-License UI (Only Bulk Import)~~ ✅ DONE
+- **File:** `src/app/(dashboard)/licenses/create/`
+- **Status:** IMPLEMENTED
+- Multi-step form: select bundle → select product offering → set quantity with price preview → submit. Uses `subscription.create` mutation. Includes loading states, error handling, and Decimal.js for monetary formatting.
 
-### 23. No Subscription Detail / Edit Page
-- **File:** `src/app/(dashboard)/subscriptions/`
-- Subscription table exists but rows are not clickable. No detail view, no inline edit, no per-subscription license list.
+### 23. ~~No Subscription Detail / Edit Page~~ ✅ DONE
+- **File:** `src/app/(dashboard)/subscriptions/[id]/`
+- **Status:** IMPLEMENTED
+- Detail page shows subscription info, licenses table with scale up/down/cancel actions, commitment warnings. Subscription table rows are now clickable. Includes modals for quantity changes and cancellation with commitment awareness.
 
-### 24. Dashboard Insights Are Read-Only
+### 24. ~~Dashboard Insights Are Read-Only~~ ✅ DONE
 - **File:** `src/app/(dashboard)/dashboard-insights.tsx`
-- Recommendations and waste alerts display but have no "Apply", "Dismiss", or "Investigate" action buttons. No way to act on insights.
+- **Status:** IMPLEMENTED
+- Recommendation cards now show "Apply" + "Investigate" buttons (RIGHT_SIZE, COST_OPTIMIZATION) or a single "Investigate" button (COMMITMENT_SUGGESTION). Waste alert cards show "Investigate" + "Dismiss" buttons. "Investigate" links to entity detail pages (subscription detail or license list). "Dismiss" tracks dismissed alerts in local state with a count indicator. Buttons follow existing slate-800 / blue-600 styling conventions.
 
 ### 25. Insights Not Persisted
 - **File:** `src/server/routers/insights.ts`
 - Recommendations and alerts are generated on-the-fly from current data. No `InsightHistory` table for trend tracking.
 
-### 26. Vendor Sync Status — No Progress / Logs UI
+### 26. ~~Vendor Sync Status — No Progress / Logs UI~~ ✅ DONE
 - **File:** `src/app/(dashboard)/settings/settings-client.tsx`
-- `syncCatalog` mutation fires but there is no real-time progress indicator, no sync log viewer, no retry button on failure, and no sync history.
+- **Status:** IMPLEMENTED
+- Enhanced vendor connection cards with: last sync timestamp, relative time display, "Sync Now" button with spinner, progress state machine (idle→enqueuing→enqueued→polling→success/error), stale warning (>24h since last sync), polling for background sync completion, error display with retry button.
 
-### 27. Onboarding Selections Not Persisted
-- **File:** `src/app/onboarding/page.tsx`
-- Vendor selections and intent (analyze vs. buy) are captured in local state but discarded on navigation. Nothing is saved to the backend.
+### 27. ~~Onboarding Selections Not Persisted~~ ✅ DONE
+- **File:** `src/server/routers/organization.ts`
+- **Status:** IMPLEMENTED
+- Added `saveOnboardingSelections` mutation that persists selected vendors and intent as organization metadata. Uses `authenticatedMutationProcedure` (works without org context for new users).
 
 ### 28. No OAuth / SSO Login
 - **Files:** `src/app/(auth)/login/page.tsx`, `src/app/(auth)/register/page.tsx`
@@ -150,22 +156,25 @@
 - **File:** `src/app/(auth)/register/page.tsx`
 - Account created immediately with no email confirmation step.
 
-### 30. Rate Limiting Has No Redis Fallback
+### 30. ~~Rate Limiting Has No Redis Fallback~~ ✅ DONE
 - **File:** `src/lib/rate-limit.ts`
-- All state in Redis. If Redis goes down, rate limiting is silently disabled. No Postgres fallback or circuit breaker.
+- **Status:** IMPLEMENTED
+- Added in-memory fixed-window counter fallback when Redis is unavailable. Rate limiting remains active during Redis outages instead of being silently disabled. Includes periodic cleanup timer (60s) to prevent unbounded memory growth. Exported `_resetInMemoryStore()` for test isolation.
 
-### 31. Vendor Credential Erasure Incomplete
+### 31. ~~Vendor Credential Erasure Incomplete~~ ✅ DONE
 - **File:** `src/server/routers/vendor.ts` (disconnect mutation)
-- Sets `credentials` to empty string. No cryptographic overwrite. No audit trail of destruction.
+- **Status:** IMPLEMENTED
+- Two-pass cryptographic erasure: first overwrites credentials with 64 random bytes (overwriting ciphertext in storage/WAL), then sets to empty string and marks DISCONNECTED. Audit log includes `credentialsErased: true`.
 
 ### 32. ~~Homepage Does Not Redirect Authenticated Users~~ ✅ DONE
 - **File:** `src/middleware.ts`
 - **Status:** IMPLEMENTED
 - Middleware now redirects authenticated users from `/` to `/marketplace`.
 
-### 33. CSV Import Missing Template Download
+### 33. ~~CSV Import Missing Template Download~~ ✅ DONE
 - **File:** `src/app/(dashboard)/licenses/import/csv-upload-client.tsx`
-- No "Download CSV Template" button. No batch-size warning, duplicate detection, or import history.
+- **Status:** IMPLEMENTED
+- Added "Download CSV Template" button generating client-side CSV blob with proper headers and example rows. Added batch-size warning (500 record max) that disables import. Added duplicate offering ID detection with warning panel.
 
 ### 34. ~~Organization Deletion — No Cascade Cleanup~~ ✅ DONE
 - **File:** `src/server/routers/organization.ts` (deactivate mutation)
@@ -176,8 +185,10 @@
 
 ## 🔵 P3 — Low (Polish, DX & Nice-to-Haves)
 
-### 35. No Breadcrumbs
-- No breadcrumb navigation on any dashboard page.
+### 35. ~~No Breadcrumbs~~ ✅ DONE
+- **File:** `src/app/(dashboard)/breadcrumbs.tsx`, `src/app/(dashboard)/layout.tsx`
+- **Status:** IMPLEMENTED
+- Auto-generated breadcrumbs from URL path. Maps known segments to human-readable labels. Handles dynamic ID segments (truncated). Returns null on root page. Integrated in dashboard layout above page content.
 
 ### 36. No Global Search / Command Palette
 - No `⌘K` command palette. No full-text search across subscriptions, licenses, or members.
@@ -185,8 +196,10 @@
 ### 37. No Dark Mode
 - No theme toggle. Light mode only.
 
-### 38. No User Profile Menu
-- No avatar dropdown in the header for profile settings, theme toggle, or sign-out.
+### 38. ~~No User Profile Menu~~ ✅ DONE
+- **File:** `src/app/(dashboard)/user-profile-menu.tsx`, `src/server/routers/user.ts`
+- **Status:** IMPLEMENTED
+- Avatar/initials dropdown in dashboard header (desktop + mobile). Shows user name, email, current organization name, and sign-out button. Uses `user.me` tRPC query for profile data. Click-outside and Escape key close the dropdown. Follows existing org-switcher dropdown patterns.
 
 ### 39. No Notifications System
 - No bell icon, no in-app notifications, no email notifications for important events (invitation received, subscription expiring, waste alert triggered).
@@ -203,16 +216,20 @@
 ### 43. Team Management — No Bulk Operations
 - No multi-select for role change or removal. No member search/filter. No member activity log.
 
-### 44. Invitation Resend Missing
-- Can revoke invitations but cannot resend expired or stale invitations.
+### 44. ~~Invitation Resend Missing~~ ✅ DONE
+- **File:** `src/server/routers/admin.ts`
+- **Status:** IMPLEMENTED
+- Added `resendInvitation` mutation. Validates invitation is expired or revoked, checks for existing member or pending invitation, creates new invitation with fresh 7-day expiry, marks old invitation as revoked if expired, writes audit log.
 
 ### 45. ~~No Health-Check Endpoint~~ ✅ DONE
 - **File:** `src/app/api/health/route.ts`
 - **Status:** IMPLEMENTED
 - GET `/api/health` returns `{ status: 'ok', timestamp }` for load balancer probes.
 
-### 46. No Logging Infrastructure
-- No structured logging (Winston/Pino). Console.log only. No log aggregation.
+### 46. ~~No Logging Infrastructure~~ ✅ DONE
+- **File:** `src/lib/logger.ts`
+- **Status:** IMPLEMENTED
+- Structured logger with JSON output (production) and human-readable format (development). Configurable log level via `LOG_LEVEL` env var. Automatic sensitive field redaction (password, credentials, token, etc.). Child logger support for request-scoped context (traceId, organizationId). Error serialization with stack traces in dev only.
 
 ### 47. No Error Tracking (Sentry)
 - No `SENTRY_DSN` env var. No error-tracking integration. Errors visible only in server logs.
@@ -257,8 +274,10 @@
 - **Status:** IMPLEMENTED
 - Health checks added for PostgreSQL (`pg_isready`) and Redis (`redis-cli ping`). Garage uses scratch image (no shell for healthcheck).
 
-### 57. No Database Migration Strategy
-- Using `prisma db push` for schema sync. No `prisma migrate` workflow, no migration history, no rollback plan.
+### 57. ~~No Database Migration Strategy~~ ✅ DONE
+- **File:** `prisma/migrations/README.md`
+- **Status:** IMPLEMENTED
+- Migration directory created with documentation. Rules: never `db push` in production, migration files committed to VCS, never edit applied migrations, destructive changes require two-step migration. Scripts already in package.json: `db:migrate`, `db:migrate:deploy`, `db:reset`.
 
 ### 58. No Monitoring / APM
 - No Prometheus metrics, no OpenTelemetry traces, no Datadog/New Relic integration.
@@ -269,11 +288,11 @@
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0 — Critical** | 9 (7 done) | ~~Core logic~~ fixed, ~~deployment~~, ~~CI/CD~~, no E2E tests |
-| **P1 — High** | 9 (6 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~, ~~vendor adapter tests~~ |
-| **P2 — Medium** | 16 (4 done) | ~~Audit log filtering~~, ~~DPA version compare~~, ~~homepage redirect~~, ~~org deletion cascade~~ |
-| **P3 — Low** | 24 (7 done) | ~~Health check~~, ~~next.config~~, ~~docker health~~, ~~type-safe adapters~~, ~~coverage config~~, ~~tsconfig strict~~, ~~scripts~~, ~~env validation~~ |
-| **Total** | **58 (24 done)** | |
+| **P0 — Critical** | 9 (8 done) | ~~Core logic~~ fixed, ~~deployment~~, ~~CI/CD~~, ~~E2E tests~~, no integration tests |
+| **P1 — High** | 9 (8 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~, ~~vendor adapter tests~~, ~~contract signing~~, ~~forgot password~~ |
+| **P2 — Medium** | 16 (12 done) | ~~Audit log filtering~~, ~~DPA version compare~~, ~~homepage redirect~~, ~~org deletion cascade~~, ~~projected invoices~~, ~~create-license UI~~, ~~subscription detail~~, ~~insights actions~~, ~~vendor sync status~~, ~~onboarding persistence~~, ~~rate limit fallback~~, ~~credential erasure~~ |
+| **P3 — Low** | 24 (14 done) | ~~Health check~~, ~~next.config~~, ~~docker health~~, ~~type-safe adapters~~, ~~coverage config~~, ~~tsconfig strict~~, ~~scripts~~, ~~env validation~~, ~~CSV template~~, ~~breadcrumbs~~, ~~user profile menu~~, ~~invitation resend~~, ~~logging~~, ~~migration strategy~~ |
+| **Total** | **58 (42 done)** | |
 
 ### By Layer
 

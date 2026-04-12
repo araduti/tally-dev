@@ -52,7 +52,7 @@ export default async function BillingPage() {
     <div>
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Billing</h1>
-        <p className="mt-1 text-slate-400">Purchase transactions and billing history</p>
+        <p className="mt-1 text-slate-400">Projected invoices, purchase transactions, and billing history</p>
       </div>
 
       <Suspense fallback={<BillingLoadingSkeleton />}>

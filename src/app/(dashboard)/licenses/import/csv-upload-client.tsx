@@ -3,6 +3,17 @@
 import { useState, useCallback, useRef } from 'react';
 import { api } from '@/trpc/client';
 
+// ---------- Constants ----------
+
+const MAX_IMPORT_RECORDS = 500;
+
+const CSV_TEMPLATE_CONTENT = [
+  'productOfferingId,quantity',
+  'clh1234567890abcdefghij00,10',
+  'clh1234567890abcdefghij01,5',
+  'clh1234567890abcdefghij02,25',
+].join('\n');
+
 // ---------- Types ----------
 
 interface ParsedRow {
@@ -71,12 +82,39 @@ function parseCSV(text: string): { rows: ParsedRow[]; errors: ParseError[] } {
   return { rows, errors };
 }
 
+// ---------- Helpers ----------
+
+function downloadTemplate() {
+  const blob = new Blob([CSV_TEMPLATE_CONTENT], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'tally-license-import-template.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function findDuplicateOfferingIds(rows: ParsedRow[]): string[] {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const row of rows) {
+    if (seen.has(row.productOfferingId)) {
+      duplicates.add(row.productOfferingId);
+    }
+    seen.add(row.productOfferingId);
+  }
+  return Array.from(duplicates);
+}
+
 // ---------- Main Component ----------
 
 export function CsvUploadClient() {
   const [csvText, setCsvText] = useState('');
   const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
   const [parseErrors, setParseErrors] = useState<ParseError[]>([]);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
   const [isParsed, setIsParsed] = useState(false);
   const [importResults, setImportResults] = useState<ImportResult[] | null>(null);
   const [importSummary, setImportSummary] = useState<{ imported: number; skipped: number } | null>(null);
@@ -108,6 +146,7 @@ export function CsvUploadClient() {
     const { rows, errors } = parseCSV(csvText);
     setParsedRows(rows);
     setParseErrors(errors);
+    setDuplicateIds(findDuplicateOfferingIds(rows));
     setIsParsed(true);
     setImportResults(null);
     setImportSummary(null);
@@ -129,6 +168,7 @@ export function CsvUploadClient() {
     setCsvText('');
     setParsedRows([]);
     setParseErrors([]);
+    setDuplicateIds([]);
     setIsParsed(false);
     setImportResults(null);
     setImportSummary(null);
@@ -141,9 +181,33 @@ export function CsvUploadClient() {
     <div className="space-y-6">
       {/* Upload Section */}
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <h2 className="text-lg font-semibold text-white mb-4">Upload CSV File</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Upload CSV File</h2>
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white text-sm font-medium transition"
+            aria-label="Download CSV template"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-4 w-4"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
+            </svg>
+            Download CSV Template
+          </button>
+        </div>
         <p className="text-sm text-slate-400 mb-4">
-          Upload a CSV file with columns: <code className="text-blue-400">productOfferingId</code>, <code className="text-blue-400">quantity</code>
+          Upload a CSV file with columns: <code className="text-blue-400">productOfferingId</code>, <code className="text-blue-400">quantity</code>.
+          Maximum {MAX_IMPORT_RECORDS} records per import.
         </p>
 
         <div className="flex items-center gap-4 mb-4">
@@ -197,6 +261,34 @@ export function CsvUploadClient() {
         </div>
       </div>
 
+      {/* Batch-Size Warning */}
+      {isParsed && parsedRows.length > MAX_IMPORT_RECORDS && (
+        <div className="bg-slate-800 rounded-xl p-6 border border-yellow-700/50" role="alert">
+          <h3 className="text-sm font-semibold text-yellow-400 mb-1">Too many records</h3>
+          <p className="text-xs text-slate-400">
+            Your file contains {parsedRows.length} valid records, but the maximum per import is {MAX_IMPORT_RECORDS}.
+            Please split your file and import in batches.
+          </p>
+        </div>
+      )}
+
+      {/* Duplicate Warnings */}
+      {isParsed && duplicateIds.length > 0 && (
+        <div className="bg-slate-800 rounded-xl p-6 border border-yellow-700/50" role="alert">
+          <h3 className="text-sm font-semibold text-yellow-400 mb-1">
+            Duplicate product offerings detected
+          </h3>
+          <p className="text-xs text-slate-400 mb-2">
+            The following product offering IDs appear more than once. Each occurrence will be imported as a separate license.
+          </p>
+          <div className="space-y-1 max-h-24 overflow-y-auto">
+            {duplicateIds.map((id) => (
+              <div key={id} className="text-xs text-slate-400 font-mono">{id}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Parse Errors */}
       {isParsed && parseErrors.length > 0 && (
         <div className="bg-slate-800 rounded-xl p-6 border border-red-700/50">
@@ -232,7 +324,7 @@ export function CsvUploadClient() {
               <button
                 type="button"
                 onClick={handleImport}
-                disabled={importMutation.isPending}
+                disabled={importMutation.isPending || parsedRows.length > MAX_IMPORT_RECORDS}
                 className="px-4 py-2 bg-green-700 hover:bg-green-600 disabled:bg-slate-700 disabled:cursor-not-allowed rounded-lg text-white text-sm font-medium transition"
               >
                 {importMutation.isPending ? 'Importing…' : `Import ${parsedRows.length} Record${parsedRows.length !== 1 ? 's' : ''}`}

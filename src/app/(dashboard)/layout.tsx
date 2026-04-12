@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import OrgSwitcher from './org-switcher';
+import UserProfileMenu from './user-profile-menu';
 import { MobileSidebarToggle, MobileMenuButton } from './mobile-sidebar';
 import { MobileSidebarProvider } from './mobile-sidebar-context';
+import Breadcrumbs from './breadcrumbs';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: '📊' },
@@ -58,13 +60,22 @@ export default function DashboardLayout({
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
-          {/* Mobile header with menu button */}
-          <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800">
-            <MobileMenuButton />
-            <span className="text-lg font-bold text-white">Tally</span>
+          {/* Desktop header with user profile menu */}
+          <div className="hidden md:flex items-center justify-end px-4 md:px-8 py-3 border-b border-slate-700 bg-slate-800">
+            <UserProfileMenu />
           </div>
 
-          <div className="p-4 md:p-8">{children}</div>
+          {/* Mobile header with menu button and user profile */}
+          <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800">
+            <MobileMenuButton />
+            <span className="text-lg font-bold text-white flex-1">Tally</span>
+            <UserProfileMenu />
+          </div>
+
+          <div className="p-4 md:p-8">
+            <Breadcrumbs />
+            {children}
+          </div>
         </main>
       </div>
     </MobileSidebarProvider>

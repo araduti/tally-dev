@@ -474,6 +474,107 @@ export const adminRouter = router({
       };
     }),
 
+  resendInvitation: orgOwnerMutationProcedure
+    .input(z.object({
+      invitationId: z.string().cuid(),
+      idempotencyKey: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const invitation = await ctx.db.invitation.findFirst({
+        where: { id: input.invitationId },
+      });
+
+      if (!invitation) {
+        throw createBusinessError({
+          code: 'NOT_FOUND',
+          message: 'Invitation not found',
+          errorCode: 'ADMIN:INVITATION:NOT_FOUND',
+        });
+      }
+
+      // Only expired or revoked invitations can be resent
+      if (invitation.status !== InvitationStatus.EXPIRED && invitation.status !== InvitationStatus.REVOKED) {
+        throw invitationInvalidStatusError();
+      }
+
+      // Check if user is already a member (they may have joined via another invitation)
+      const { prisma } = await import('@/lib/db');
+      const existingUser = await prisma.user.findUnique({
+        where: { email: invitation.email },
+      });
+      if (existingUser) {
+        const existingMember = await ctx.db.member.findFirst({
+          where: { userId: existingUser.id },
+        });
+        if (existingMember) {
+          throw createBusinessError({
+            code: 'CONFLICT',
+            message: 'Cannot send invitation to this email address',
+            errorCode: 'ADMIN:INVITATION:CONFLICT',
+          });
+        }
+      }
+
+      // Check for another active pending invitation for the same email
+      const activePending = await ctx.db.invitation.findFirst({
+        where: {
+          email: invitation.email,
+          status: InvitationStatus.PENDING,
+          id: { not: invitation.id },
+        },
+      });
+      if (activePending) {
+        throw createBusinessError({
+          code: 'CONFLICT',
+          message: 'Cannot send invitation to this email address',
+          errorCode: 'ADMIN:INVITATION:CONFLICT',
+        });
+      }
+
+      // Create a new invitation with fresh expiry
+      const newInvitation = await ctx.db.invitation.create({
+        data: {
+          email: invitation.email,
+          orgRole: invitation.orgRole ?? null,
+          mspRole: invitation.mspRole ?? null,
+          status: InvitationStatus.PENDING,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          inviterId: ctx.userId,
+        },
+      });
+
+      // Mark the old invitation as superseded (REVOKED) if it was expired
+      if (invitation.status === InvitationStatus.EXPIRED) {
+        await ctx.db.invitation.update({
+          where: { id: invitation.id },
+          data: { status: InvitationStatus.REVOKED },
+        });
+      }
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId!,
+        userId: ctx.userId,
+        action: 'admin.invitation_resent',
+        entityId: newInvitation.id,
+        before: { originalInvitationId: invitation.id, status: invitation.status },
+        after: { email: invitation.email, orgRole: invitation.orgRole, mspRole: invitation.mspRole },
+        traceId: ctx.traceId,
+      });
+
+      return {
+        invitation: {
+          id: newInvitation.id,
+          email: newInvitation.email,
+          orgRole: newInvitation.orgRole,
+          mspRole: newInvitation.mspRole,
+          status: newInvitation.status,
+          expiresAt: newInvitation.expiresAt,
+          createdAt: newInvitation.createdAt,
+        },
+      };
+    }),
+
   listAuditLogs: orgOwnerProcedure
     .input(z.object({
       cursor: z.string().cuid().optional(),

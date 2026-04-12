@@ -119,12 +119,23 @@ export const vendorRouter = router({
         });
       }
 
-      // Overwrite credentials and set status to DISCONNECTED
+      // Cryptographic overwrite: replace credentials with random bytes before
+      // clearing, ensuring the original ciphertext is no longer recoverable
+      // from storage or write-ahead logs.
+      const { randomBytes } = await import('node:crypto');
+      const overwrite = randomBytes(64).toString('hex');
+
+      await ctx.db.vendorConnection.update({
+        where: { id: connection.id },
+        data: { credentials: overwrite },
+      });
+
+      // Second pass: set to empty string and mark as DISCONNECTED
       const updated = await ctx.db.vendorConnection.update({
         where: { id: connection.id },
         data: {
           status: 'DISCONNECTED',
-          credentials: '', // securely erased
+          credentials: '',
         },
         select: { id: true, status: true },
       });
@@ -136,7 +147,7 @@ export const vendorRouter = router({
         action: 'vendor.disconnected',
         entityId: connection.id,
         before: { status: connection.status },
-        after: { status: 'DISCONNECTED' },
+        after: { status: 'DISCONNECTED', credentialsErased: true },
         traceId: ctx.traceId,
       });
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useState, useCallback } from 'react';
+import Link from 'next/link';
 import { api } from '@/trpc/client';
 
 // ---------- Serialized types ----------
@@ -32,6 +34,33 @@ export interface DashboardInsightsProps {
   initialAlerts: SerializedWasteAlert[];
 }
 
+// ---------- Helpers ----------
+
+/**
+ * Build the "Investigate" URL for a given entity.
+ * LICENSE entities link to the licenses page (no detail page exists yet).
+ * SUBSCRIPTION entities link to the subscription detail page.
+ */
+function entityHref(entityType: 'LICENSE' | 'SUBSCRIPTION', entityId: string): string {
+  if (entityType === 'SUBSCRIPTION') {
+    return `/subscriptions/${entityId}`;
+  }
+  // Licenses don't have a detail page yet — link to the licenses list
+  return '/licenses';
+}
+
+/**
+ * Choose which action buttons to show for a recommendation type.
+ * - RIGHT_SIZE / COST_OPTIMIZATION → "Apply" (goes to entity page to act)
+ * - COMMITMENT_SUGGESTION          → "Investigate" only
+ */
+function recActionLabel(type: SerializedRecommendation['type']): string {
+  if (type === 'RIGHT_SIZE' || type === 'COST_OPTIMIZATION') {
+    return 'Apply';
+  }
+  return 'Investigate';
+}
+
 // ---------- Severity badge ----------
 
 const severityColors: Record<string, string> = {
@@ -61,6 +90,12 @@ function SeverityBadge({ severity }: { severity: string }) {
 // ---------- Main component ----------
 
 export function DashboardInsights({ initialRecommendations, initialAlerts }: DashboardInsightsProps) {
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
+
+  const dismissAlert = useCallback((alertId: string) => {
+    setDismissedAlertIds((prev) => new Set(prev).add(alertId));
+  }, []);
+
   const { data: recData } = api.insights.getRecommendations.useQuery(
     {},
     { initialData: { recommendations: initialRecommendations as any, generatedAt: new Date() } },
@@ -72,7 +107,9 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
   );
 
   const recommendations = (recData?.recommendations ?? initialRecommendations) as SerializedRecommendation[];
-  const alerts = (alertData?.alerts ?? initialAlerts) as SerializedWasteAlert[];
+  const allAlerts = (alertData?.alerts ?? initialAlerts) as SerializedWasteAlert[];
+  const alerts = allAlerts.filter((a) => !dismissedAlertIds.has(a.id));
+  const dismissedCount = allAlerts.length - alerts.length;
 
   return (
     <div className="grid md:grid-cols-2 gap-6">
@@ -111,6 +148,24 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
                     )}
                   </div>
                 </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-700/50">
+                  <Link
+                    href={entityHref(rec.entityType, rec.entityId)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white transition focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1 focus:ring-offset-slate-800"
+                  >
+                    {recActionLabel(rec.type)}
+                  </Link>
+                  {rec.type !== 'COMMITMENT_SUGGESTION' && (
+                    <Link
+                      href={entityHref(rec.entityType, rec.entityId)}
+                      className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md bg-slate-600 hover:bg-slate-500 text-slate-200 transition focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 focus:ring-offset-slate-800"
+                    >
+                      Investigate
+                    </Link>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -121,14 +176,21 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
       <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Waste Alerts</h2>
-          {alerts.length > 0 && (
-            <span className="text-xs text-slate-400">{alerts.length} alert{alerts.length !== 1 ? 's' : ''}</span>
-          )}
+          <div className="flex items-center gap-2">
+            {dismissedCount > 0 && (
+              <span className="text-xs text-slate-500">{dismissedCount} dismissed</span>
+            )}
+            {alerts.length > 0 && (
+              <span className="text-xs text-slate-400">{alerts.length} alert{alerts.length !== 1 ? 's' : ''}</span>
+            )}
+          </div>
         </div>
 
         {alerts.length === 0 ? (
           <p className="text-slate-400 text-sm">
-            No waste detected. Your subscriptions and licenses are in good shape.
+            {dismissedCount > 0
+              ? 'All waste alerts have been dismissed.'
+              : 'No waste detected. Your subscriptions and licenses are in good shape.'}
           </p>
         ) : (
           <div className="space-y-3 max-h-80 overflow-y-auto">
@@ -154,6 +216,24 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
                       💡 {alert.suggestedAction}
                     </p>
                   </div>
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-slate-700/50">
+                  <Link
+                    href={entityHref(alert.entityType, alert.entityId)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white transition focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1 focus:ring-offset-slate-800"
+                  >
+                    Investigate
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={() => dismissAlert(alert.id)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-md bg-slate-600 hover:bg-slate-500 text-slate-200 transition focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-1 focus:ring-offset-slate-800"
+                    aria-label={`Dismiss alert: ${alert.title}`}
+                  >
+                    Dismiss
+                  </button>
                 </div>
               </div>
             ))}
