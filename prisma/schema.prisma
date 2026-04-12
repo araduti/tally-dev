@@ -571,7 +571,33 @@ model InsightSnapshot {
 }
 
 // =============================================================
-// 10. AUDIT LOG
+// 10. NOTIFICATIONS
+// =============================================================
+
+model Notification {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  userId         String?      // null = org-wide notification
+  type           String       // e.g., 'INVITATION_RECEIVED', 'SUBSCRIPTION_EXPIRING', 'WASTE_ALERT'
+  title          String
+  message        String
+  entityId       String?
+  entityType     String?      // 'SUBSCRIPTION', 'LICENSE', 'INVITATION'
+
+  read           Boolean      @default(false)
+  readAt         DateTime?
+
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([organizationId, userId, read])
+  @@map("notifications")
+}
+
+// =============================================================
+// 11. AUDIT LOG
 // Immutable append-only. Never update or delete rows from this table.
 // =============================================================
 
