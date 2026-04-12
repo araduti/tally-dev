@@ -115,6 +115,8 @@ export const adminRouter = router({
         where: { id: ctx.organizationId! },
         select: { name: true },
       });
+      // Fetch inviter name via raw prisma — User is a global model without
+      // organizationId so it doesn't pass through the RLS proxy.
       const { prisma: rawPrisma } = await import('@/lib/db');
       const inviter = ctx.userId
         ? await rawPrisma.user.findUnique({
