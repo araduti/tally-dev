@@ -64,9 +64,9 @@ function recActionLabel(type: SerializedRecommendation['type']): string {
 // ---------- Severity badge ----------
 
 const severityColors: Record<string, string> = {
-  HIGH: 'bg-red-900/40 text-red-300 border-red-700',
-  MEDIUM: 'bg-yellow-900/40 text-yellow-300 border-yellow-700',
-  LOW: 'bg-blue-900/40 text-blue-300 border-blue-700',
+  HIGH: 'bg-red-500/10 text-red-500 dark:text-red-400 border-red-500/20',
+  MEDIUM: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+  LOW: 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
 };
 
 const typeIcons: Record<string, string> = {
@@ -112,18 +112,27 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
   const dismissedCount = allAlerts.length - alerts.length;
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
+    <div className="grid md:grid-cols-2 gap-5">
       {/* AI Recommendations Panel */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">AI Recommendations</h2>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-500">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path d="M10 1a.75.75 0 0 1 .75.75v1.5a.75.75 0 0 1-1.5 0v-1.5A.75.75 0 0 1 10 1ZM5.05 3.05a.75.75 0 0 1 1.06 0l1.062 1.06a.75.75 0 1 1-1.06 1.06L5.05 4.11a.75.75 0 0 1 0-1.06ZM14.95 3.05a.75.75 0 0 1 0 1.06l-1.06 1.062a.75.75 0 0 1-1.062-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM3 8a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5A.75.75 0 0 1 3 8ZM14 8a.75.75 0 0 1 .75-.75h1.5a.75.75 0 0 1 0 1.5h-1.5A.75.75 0 0 1 14 8ZM7.172 10.828a.75.75 0 0 1 0 1.06L6.11 12.95a.75.75 0 0 1-1.06-1.06l1.06-1.06a.75.75 0 0 1 1.06 0ZM10.766 7.51a.75.75 0 0 0-1.37.365l-.492 6.861a.75.75 0 0 0 1.204.65l1.043-.799.985 3.678a.75.75 0 0 0 1.45-.388l-.978-3.646 1.292.204a.75.75 0 0 0 .536-1.26l-3.67-5.664Z" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">AI Recommendations</h2>
+          </div>
           {recommendations.length > 0 && (
-            <span className="text-xs text-slate-400">{recommendations.length} suggestion{recommendations.length !== 1 ? 's' : ''}</span>
+            <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full">
+              {recommendations.length}
+            </span>
           )}
         </div>
 
         {recommendations.length === 0 ? (
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-500 dark:text-slate-400 text-sm">
             No recommendations at this time. Your licenses look well-optimized!
           </p>
         ) : (
@@ -131,7 +140,7 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
             {recommendations.map((rec) => (
               <div
                 key={rec.id}
-                className="p-3 rounded-lg bg-slate-700/30 border border-slate-700 hover:border-slate-600 transition"
+                className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 transition-colors duration-200"
               >
                 <div className="flex items-start gap-2 mb-1">
                   <span className="text-sm" aria-hidden="true">{typeIcons[rec.type] ?? '💡'}</span>
@@ -173,21 +182,30 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
       </div>
 
       {/* Waste Alerts Panel */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Waste Alerts</h2>
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-500">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495ZM10 5a.75.75 0 0 1 .75.75v3.5a.75.75 0 0 1-1.5 0v-3.5A.75.75 0 0 1 10 5Zm0 9a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Waste Alerts</h2>
+          </div>
           <div className="flex items-center gap-2">
             {dismissedCount > 0 && (
               <span className="text-xs text-slate-500">{dismissedCount} dismissed</span>
             )}
             {alerts.length > 0 && (
-              <span className="text-xs text-slate-400">{alerts.length} alert{alerts.length !== 1 ? 's' : ''}</span>
+              <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-full">
+                {alerts.length}
+              </span>
             )}
           </div>
         </div>
 
         {alerts.length === 0 ? (
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-500 dark:text-slate-400 text-sm">
             {dismissedCount > 0
               ? 'All waste alerts have been dismissed.'
               : 'No waste detected. Your subscriptions and licenses are in good shape.'}
@@ -197,7 +215,7 @@ export function DashboardInsights({ initialRecommendations, initialAlerts }: Das
             {alerts.map((alert) => (
               <div
                 key={alert.id}
-                className="p-3 rounded-lg bg-slate-700/30 border border-slate-700 hover:border-slate-600 transition"
+                className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600 transition-colors duration-200"
               >
                 <div className="flex items-start gap-2 mb-1">
                   <span className="text-sm" aria-hidden="true">{typeIcons[alert.type] ?? '⚠️'}</span>
