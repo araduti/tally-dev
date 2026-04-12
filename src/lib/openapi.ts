@@ -1234,7 +1234,7 @@ export function buildOpenApiSpec(): Record<string, unknown> {
           },
         },
         { type: 'object', properties: { success: { type: 'boolean', const: true } } },
-        'Saves discovery-first onboarding selections. Requires authentication only.',
+        'Saves discovery-first onboarding selections. Requires organization membership.',
       ),
 
       // ---- Insights ------------------------------------------------------

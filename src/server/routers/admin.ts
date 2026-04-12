@@ -3,6 +3,8 @@ import { router, orgOwnerProcedure, orgOwnerMutationProcedure, authenticatedMuta
 import { OrgRole, MspRole, InvitationStatus } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError, invitationInvalidStatusError, invitationExpiredError } from '@/lib/errors';
+import { sendInvitationEmail } from '@/lib/email';
+import { captureException } from '@/lib/sentry';
 
 export const adminRouter = router({
   listMembers: orgOwnerProcedure
@@ -105,6 +107,27 @@ export const adminRouter = router({
         after: { email: input.email, orgRole: input.orgRole, mspRole: input.mspRole },
         traceId: ctx.traceId,
       });
+
+      // Send invitation email (fire-and-forget — don't block the response)
+      const baseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000';
+      const acceptUrl = `${baseUrl}/invitations/${invitation.id}/accept`;
+      const org = await ctx.db.organization.findUnique({
+        where: { id: ctx.organizationId! },
+        select: { name: true },
+      });
+      const { prisma: rawPrisma } = await import('@/lib/db');
+      const inviter = ctx.userId
+        ? await rawPrisma.user.findUnique({
+            where: { id: ctx.userId },
+            select: { name: true },
+          })
+        : null;
+      sendInvitationEmail(
+        input.email,
+        org?.name ?? 'your organization',
+        inviter?.name ?? 'A team member',
+        acceptUrl,
+      ).catch((err) => captureException(err));
 
       return {
         invitation: {

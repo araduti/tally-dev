@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth';
 import { organization } from 'better-auth/plugins';
 import { prismaAdapter } from 'better-auth/adapters/prisma';
 import { prisma } from './db';
+import { sendVerificationEmail } from './email';
 
 /**
  * Checks whether an OAuth provider is fully configured by verifying
@@ -50,9 +51,10 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
-      // In production, integrate a transactional email service (e.g. Resend, Postmark).
-      // For development, log the verification URL.
-      console.log(`[Email Verification] Send to ${user.email}: ${url}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[Email Verification] Send to ${user.email}: ${url}`);
+      }
+      await sendVerificationEmail(user.email, url);
     },
     sendOnSignUp: true,
   },

@@ -27,14 +27,15 @@ const DIRECT_ORG_MODELS = new Set([
   'notification',
 ]);
 
-// Raw-query methods that bypass model-level scoping and must NEVER be
-// called through the RLS proxy.  If code needs these, use the raw
-// `prisma` client with explicit organizationId filters.
+// Methods that bypass model-level scoping and must NEVER be called
+// through the RLS proxy.  If code needs these, use the raw `prisma`
+// client with explicit organizationId filters.
 const BLOCKED_RAW_METHODS = new Set([
   '$executeRaw',
   '$executeRawUnsafe',
   '$queryRaw',
   '$queryRawUnsafe',
+  '$transaction',
 ]);
 
 type RLSPrismaClient = PrismaClient;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { router, orgMemberProcedure, orgOwnerMutationProcedure, mspTechProcedure, mspAdminMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
+import { router, orgMemberProcedure, orgOwnerMutationProcedure, orgMemberMutationProcedure, mspTechProcedure, mspAdminMutationProcedure, authenticatedMutationProcedure } from '../trpc/init';
 import { BillingType } from '@prisma/client';
 import { writeAuditLog } from '@/lib/audit';
 import { createBusinessError, insufficientRoleError, provisioningDisabledError } from '@/lib/errors';
@@ -409,39 +409,39 @@ export const organizationRouter = router({
       };
     }),
 
-  saveOnboardingSelections: authenticatedMutationProcedure
+  saveOnboardingSelections: orgMemberMutationProcedure
     .input(z.object({
       selectedVendors: z.array(z.string().min(1)),
       intent: z.enum(['analyze', 'buy']),
       idempotencyKey: z.string().uuid(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { prisma } = await import('@/lib/db');
-
-      // Find the user's active organization or first org they belong to
-      const session = await prisma.session.findFirst({
-        where: { userId: ctx.userId },
-        orderBy: { updatedAt: 'desc' },
-        select: { activeOrganizationId: true },
-      });
-
-      const orgId = session?.activeOrganizationId ?? ctx.organizationId;
-
-      if (orgId) {
-        // Persist onboarding selections as organization metadata
-        await prisma.organization.update({
-          where: { id: orgId },
-          data: {
-            metadata: {
-              onboarding: {
-                selectedVendors: input.selectedVendors,
-                intent: input.intent,
-                completedAt: new Date().toISOString(),
-              },
+      // Use org-scoped ctx.db — RLS ensures we can only update our own org
+      await ctx.db.organization.update({
+        where: { id: ctx.organizationId },
+        data: {
+          metadata: {
+            onboarding: {
+              selectedVendors: input.selectedVendors,
+              intent: input.intent,
+              completedAt: new Date().toISOString(),
             },
           },
-        });
-      }
+        },
+      });
+
+      await writeAuditLog({
+        db: ctx.db,
+        organizationId: ctx.organizationId,
+        userId: ctx.userId,
+        action: 'organization.onboarding_saved',
+        entityId: ctx.organizationId,
+        after: {
+          selectedVendors: input.selectedVendors,
+          intent: input.intent,
+        },
+        traceId: ctx.traceId,
+      });
 
       return { success: true as const };
     }),
