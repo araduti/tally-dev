@@ -80,7 +80,7 @@ function createModelProxy(model: any, organizationId: string) {
         };
       }
 
-      if (['create', 'createMany'].includes(prop)) {
+      if (['create', 'createMany', 'createManyAndReturn'].includes(prop)) {
         return (args: any) => {
           if (args.data) {
             if (Array.isArray(args.data)) {
@@ -104,6 +104,7 @@ function createModelProxy(model: any, organizationId: string) {
         return (args: any) => {
           args.where = { ...args.where, organizationId };
           if (args.create) args.create = { ...args.create, organizationId };
+          if (args.update) args.update = { ...args.update, organizationId };
           return original.call(target, args);
         };
       }
