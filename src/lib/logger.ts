@@ -13,6 +13,8 @@
  *   {"level":"info","message":"Subscription created","timestamp":"...","subscriptionId":"...","organizationId":"..."}
  */
 
+import { sanitize } from '@/lib/sensitive-keys';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 interface LogEntry {
@@ -40,34 +42,6 @@ function getMinLevel(): LogLevel {
 // Use JSON format in production, human-readable in development
 function isJsonMode(): boolean {
   return process.env.NODE_ENV === 'production' || process.env.LOG_FORMAT === 'json';
-}
-
-/**
- * Strips sensitive fields from metadata before logging.
- * Never log credentials, tokens, passwords, or encryption keys.
- */
-const SENSITIVE_KEYS = new Set([
-  'password', 'credentials', 'token', 'secret',
-  'accessToken', 'refreshToken', 'apiKey',
-  'encryptionKey', 'ENCRYPTION_KEY',
-]);
-
-function sanitize(meta: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(meta)) {
-    if (SENSITIVE_KEYS.has(key)) {
-      sanitized[key] = '[REDACTED]';
-    } else if (value instanceof Error) {
-      sanitized[key] = {
-        message: value.message,
-        name: value.name,
-        stack: process.env.NODE_ENV !== 'production' ? value.stack : undefined,
-      };
-    } else {
-      sanitized[key] = value;
-    }
-  }
-  return sanitized;
 }
 
 function log(level: LogLevel, message: string, meta?: Record<string, unknown>): void {

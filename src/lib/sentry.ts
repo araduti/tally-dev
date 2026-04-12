@@ -13,28 +13,7 @@
  */
 
 import { logger } from '@/lib/logger';
-
-// ── Sensitive-key scrubbing ────────────────────────────────────────────
-// Mirror the same list from src/lib/logger.ts so credentials never leak.
-const SENSITIVE_KEYS = new Set([
-  'password', 'credentials', 'token', 'secret',
-  'accessToken', 'refreshToken', 'apiKey',
-  'encryptionKey', 'ENCRYPTION_KEY',
-]);
-
-function sanitize(obj: Record<string, unknown>): Record<string, unknown> {
-  const sanitized: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEYS.has(key)) {
-      sanitized[key] = '[REDACTED]';
-    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      sanitized[key] = sanitize(value as Record<string, unknown>);
-    } else {
-      sanitized[key] = value;
-    }
-  }
-  return sanitized;
-}
+import { sanitize } from '@/lib/sensitive-keys';
 
 // ── DSN parsing ────────────────────────────────────────────────────────
 
