@@ -1,1 +1,25 @@
 @import "tailwindcss";
+
+/*
+ * Dark-mode base layer.
+ *
+ * Tailwind v4 uses the `dark` variant by default via the `dark` class on
+ * <html>. The variables below give every page a sensible dark backdrop and
+ * text colour when the class is present. Component-level `dark:` utilities
+ * handle the rest.
+ */
+@layer base {
+  .dark {
+    color-scheme: dark;
+  }
+
+  /* Default body colours for dark mode */
+  .dark body {
+    @apply bg-slate-900 text-slate-100;
+  }
+
+  /* Border default */
+  .dark * {
+    @apply border-slate-700;
+  }
+}
