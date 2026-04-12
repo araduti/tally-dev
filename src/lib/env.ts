@@ -108,17 +108,17 @@ const envSchema = z.object({
   ];
   const stripeSet = stripeVars.filter(Boolean).length;
   if (stripeSet > 0 && stripeSet < 3) {
-    const missing: Array<{ path: string; name: string }> = [
-      { path: 'STRIPE_SECRET_KEY', name: 'STRIPE_SECRET_KEY' },
-      { path: 'STRIPE_WEBHOOK_SECRET', name: 'STRIPE_WEBHOOK_SECRET' },
-      { path: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY', name: 'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY' },
-    ];
-    for (const { path, name } of missing) {
-      if (!data[name as keyof typeof data]) {
+    const stripeKeys = [
+      'STRIPE_SECRET_KEY',
+      'STRIPE_WEBHOOK_SECRET',
+      'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
+    ] as const;
+    for (const key of stripeKeys) {
+      if (!data[key]) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: [path],
-          message: `${name} is required when any Stripe variable is set`,
+          path: [key],
+          message: `${key} is required when any Stripe variable is set`,
         });
       }
     }
