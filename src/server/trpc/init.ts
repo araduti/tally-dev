@@ -236,6 +236,7 @@ export const mspOwnerProcedure = protectedProcedure.use(requireRole('MSP_OWNER')
 // Composed procedure types — MUTATIONS (idempotency-guarded)
 // Every mutation must use one of these, never a query-only procedure.
 export const authenticatedMutationProcedure = authenticatedProcedure.use(idempotencyGuard);
+export const orgMemberMutationProcedure = orgMemberProcedure.use(idempotencyGuard);
 export const orgAdminMutationProcedure = orgAdminProcedure.use(idempotencyGuard);
 export const orgOwnerMutationProcedure = orgOwnerProcedure.use(idempotencyGuard);
 export const mspTechMutationProcedure = mspTechProcedure.use(idempotencyGuard);

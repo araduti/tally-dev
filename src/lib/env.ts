@@ -40,6 +40,11 @@ const envSchema = z.object({
   INNGEST_EVENT_KEY: z.string().min(1, 'INNGEST_EVENT_KEY is required'),
   INNGEST_SIGNING_KEY: z.string().min(1, 'INNGEST_SIGNING_KEY is required'),
 
+  // ── Lettermint (transactional email — optional in dev, required in production) ──
+  LETTERMINT_API_KEY: z.string().min(1).optional(),
+  LETTERMINT_FROM_EMAIL: z.string().email().optional(),
+  LETTERMINT_API_URL: z.string().url().optional(),
+
   // ── Optional ──
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
