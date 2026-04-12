@@ -49,10 +49,15 @@ export function sanitize(
         stack:
           process.env.NODE_ENV !== 'production' ? value.stack : undefined,
       };
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((item) =>
+        typeof item === 'object' && item !== null && !Array.isArray(item)
+          ? sanitize(item as Record<string, unknown>)
+          : item,
+      );
     } else if (
       typeof value === 'object' &&
-      value !== null &&
-      !Array.isArray(value)
+      value !== null
     ) {
       result[key] = sanitize(value as Record<string, unknown>);
     } else {

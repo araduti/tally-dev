@@ -135,7 +135,7 @@ describe('sensitive-keys', () => {
       expect(input).toEqual(inputCopy);
     });
 
-    it('should pass arrays through unchanged', () => {
+    it('should pass primitive arrays through unchanged', () => {
       const input = {
         items: [1, 2, 3],
         tags: ['a', 'b'],
@@ -145,6 +145,23 @@ describe('sensitive-keys', () => {
 
       expect(result.items).toEqual([1, 2, 3]);
       expect(result.tags).toEqual(['a', 'b']);
+    });
+
+    it('should recursively sanitize objects inside arrays', () => {
+      const input = {
+        connections: [
+          { host: 'a.example.com', apiKey: 'ak_111' },
+          { host: 'b.example.com', password: 'pw_222' },
+        ],
+      };
+
+      const result = sanitize(input);
+
+      const connections = result.connections as Array<Record<string, unknown>>;
+      expect(connections[0].host).toBe('a.example.com');
+      expect(connections[0].apiKey).toBe('[REDACTED]');
+      expect(connections[1].host).toBe('b.example.com');
+      expect(connections[1].password).toBe('[REDACTED]');
     });
 
     it('should pass primitives through unchanged', () => {
