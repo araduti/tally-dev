@@ -21,7 +21,11 @@ export default function RegisterPage() {
     fetch('/api/auth/providers')
       .then((res) => res.json())
       .then((data: EnabledProviders) => setProviders(data))
-      .catch(() => {/* Providers unavailable — show email/password only */});
+      .catch(() => {
+        // Provider endpoint unavailable — show email/password only.
+        // This is expected in dev when the endpoint hasn't loaded yet.
+        console.warn('[Register] Failed to fetch OAuth provider flags');
+      });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {

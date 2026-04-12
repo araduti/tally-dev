@@ -57,10 +57,13 @@ const wasteAlertSchema = z.object({
 /**
  * Generate recommendations from active subscriptions.
  * Extracted from getRecommendations so persistInsights can reuse it.
+ *
+ * @param db - RLS-scoped Prisma proxy (ctx.db)
+ * @param prismaClient - Unscoped Prisma client for cross-org catalog queries
  */
 async function analyzeRecommendations(
-  db: any,
-  prisma: any,
+  db: import('@/server/trpc/context').RLSPrismaProxy,
+  prismaClient: import('@prisma/client').PrismaClient,
 ): Promise<RecommendationItem[]> {
   const subscriptions = await db.subscription.findMany({
     where: { status: 'ACTIVE' },
@@ -101,7 +104,7 @@ async function analyzeRecommendations(
       const currentCost = new Decimal(lic.productOffering.effectiveUnitCost.toString());
 
       // Look for cheaper offerings for the same bundle
-      const allOfferings = await prisma.productOffering.findMany({
+      const allOfferings = await prismaClient.productOffering.findMany({
         where: { bundleId: sub.bundleId },
       });
 
@@ -149,9 +152,11 @@ async function analyzeRecommendations(
 /**
  * Generate waste alerts from active subscriptions.
  * Extracted from getWasteAlerts so persistInsights can reuse it.
+ *
+ * @param db - RLS-scoped Prisma proxy (ctx.db)
  */
 async function analyzeWasteAlerts(
-  db: any,
+  db: import('@/server/trpc/context').RLSPrismaProxy,
 ): Promise<WasteAlertItem[]> {
   const subscriptions = await db.subscription.findMany({
     where: { status: 'ACTIVE' },

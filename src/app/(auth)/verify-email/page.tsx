@@ -16,9 +16,11 @@ export default function VerifyEmailPage() {
   useEffect(() => {
     if (!token) return;
 
+    const verificationToken = token;
+
     async function verifyEmail() {
       try {
-        const res = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token!)}`, {
+        const res = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(verificationToken)}`, {
           method: 'GET',
         });
 
