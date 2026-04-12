@@ -215,6 +215,7 @@ model Organization {
   billingSnapshots     BillingSnapshot[]
   dpaAcceptances       DpaAcceptance[]
   insightSnapshots     InsightSnapshot[]
+  notifications        Notification[]
 
   @@map("organization")
 }
