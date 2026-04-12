@@ -210,7 +210,7 @@ export default function NotificationBell() {
               </div>
             )}
 
-            {notifications.map((notification) => (
+            {notifications.map((notification: { id: string; read: boolean; type: string; title: string; message: string; entityType: string | null; entityId: string | null; createdAt: string }) => (
               <button
                 key={notification.id}
                 type="button"

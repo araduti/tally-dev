@@ -8,6 +8,7 @@ import { adminRouter } from './admin';
 import { organizationRouter } from './organization';
 import { insightsRouter } from './insights';
 import { userRouter } from './user';
+import { notificationRouter } from './notification';
 
 export const appRouter = router({
   catalog: catalogRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   organization: organizationRouter,
   insights: insightsRouter,
   user: userRouter,
+  notification: notificationRouter,
 });
 
 export type AppRouter = typeof appRouter;
