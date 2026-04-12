@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/trpc/client';
+import { ExportButton } from '../export-button';
 
 // ---------- Serialized types ----------
 
@@ -159,6 +160,30 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
 
   const [cancelTarget, setCancelTarget] = useState<SerializedSubscription | null>(null);
 
+  // ---- CSV export data ----------------------------------------------------
+
+  const exportData = useMemo(
+    () =>
+      subscriptions.map((s) => ({
+        bundle: s.bundle.name,
+        distributor: s.vendorType ?? '',
+        status: s.status,
+        commitmentEnd: s.commitmentEndDate
+          ? new Date(s.commitmentEndDate).toLocaleDateString()
+          : '',
+        created: new Date(s.createdAt).toLocaleDateString(),
+      })),
+    [subscriptions],
+  );
+
+  const exportColumns = [
+    { key: 'bundle', header: 'Bundle' },
+    { key: 'distributor', header: 'Distributor' },
+    { key: 'status', header: 'Status' },
+    { key: 'commitmentEnd', header: 'Commitment End' },
+    { key: 'created', header: 'Created' },
+  ];
+
   const handleCancelSuccess = useCallback(() => {
     setCancelTarget(null);
     void utils.subscription.list.invalidate();
@@ -170,6 +195,14 @@ export function SubscriptionTable({ initialSubscriptions, initialNextCursor }: S
 
   return (
     <>
+      <div className="mb-4 flex justify-end">
+        <ExportButton
+          data={exportData}
+          filename="tally-subscriptions"
+          columns={exportColumns}
+          label="Export Subscriptions"
+        />
+      </div>
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <table className="w-full" aria-label="Subscriptions">
           <thead>

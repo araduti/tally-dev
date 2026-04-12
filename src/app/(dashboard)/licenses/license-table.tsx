@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { api } from '@/trpc/client';
+import { ExportButton } from '../export-button';
 
 // ---------- Serialized types (Date→ISO string, Decimal→string) ----------
 
@@ -256,8 +257,42 @@ export function LicenseTable({ initialLicenses, initialNextCursor }: LicenseTabl
     void utils.license.list.invalidate();
   }, [utils]);
 
+  // ---- CSV export data ----------------------------------------------------
+
+  const exportData = useMemo(
+    () =>
+      licenses.map((l) => ({
+        bundle: l.subscription.bundle.name,
+        quantity: l.quantity,
+        pending: l.pendingQuantity ?? '',
+        status: deriveLicenseStatus(l),
+        commitmentEnd: l.subscription.commitmentEndDate
+          ? new Date(l.subscription.commitmentEndDate).toLocaleDateString()
+          : '',
+        unitCost: l.productOffering?.effectiveUnitCost ?? '',
+      })),
+    [licenses],
+  );
+
+  const exportColumns = [
+    { key: 'bundle', header: 'Bundle' },
+    { key: 'quantity', header: 'Quantity' },
+    { key: 'pending', header: 'Pending Quantity' },
+    { key: 'status', header: 'Status' },
+    { key: 'commitmentEnd', header: 'Commitment End' },
+    { key: 'unitCost', header: 'Unit Cost' },
+  ];
+
   return (
     <>
+      <div className="mb-4 flex justify-end">
+        <ExportButton
+          data={exportData}
+          filename="tally-licenses"
+          columns={exportColumns}
+          label="Export Licenses"
+        />
+      </div>
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
         <table className="w-full" aria-label="Licenses">
           <thead>

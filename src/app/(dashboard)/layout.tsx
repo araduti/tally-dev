@@ -4,6 +4,9 @@ import UserProfileMenu from './user-profile-menu';
 import { MobileSidebarToggle, MobileMenuButton } from './mobile-sidebar';
 import { MobileSidebarProvider } from './mobile-sidebar-context';
 import Breadcrumbs from './breadcrumbs';
+import { ThemeProvider } from './theme-provider';
+import { ThemeToggle } from './theme-toggle';
+import { CommandPalette, CommandPaletteButton } from './command-palette';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: '📊' },
@@ -50,34 +53,43 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <MobileSidebarProvider>
-      <div className="min-h-screen bg-slate-900 flex">
-        {/* Desktop Sidebar — hidden on mobile */}
-        <Sidebar className="hidden md:flex" />
+    <ThemeProvider>
+      <MobileSidebarProvider>
+        <div className="min-h-screen bg-slate-900 dark:bg-slate-900 flex">
+          {/* Desktop Sidebar — hidden on mobile */}
+          <Sidebar className="hidden md:flex" />
 
-        {/* Mobile Sidebar — overlay toggled by button */}
-        <MobileSidebarToggle navigation={navigation} />
+          {/* Mobile Sidebar — overlay toggled by button */}
+          <MobileSidebarToggle navigation={navigation} />
 
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          {/* Desktop header with user profile menu */}
-          <div className="hidden md:flex items-center justify-end px-4 md:px-8 py-3 border-b border-slate-700 bg-slate-800">
-            <UserProfileMenu />
-          </div>
+          {/* Main Content */}
+          <main className="flex-1 overflow-auto">
+            {/* Desktop header with user profile menu */}
+            <div className="hidden md:flex items-center justify-end gap-3 px-4 md:px-8 py-3 border-b border-slate-700 bg-slate-800">
+              {/* Search / ⌘K trigger */}
+              <CommandPaletteButton />
+              <ThemeToggle />
+              <UserProfileMenu />
+            </div>
 
-          {/* Mobile header with menu button and user profile */}
-          <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800">
-            <MobileMenuButton />
-            <span className="text-lg font-bold text-white flex-1">Tally</span>
-            <UserProfileMenu />
-          </div>
+            {/* Mobile header with menu button and user profile */}
+            <div className="md:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800">
+              <MobileMenuButton />
+              <span className="text-lg font-bold text-white flex-1">Tally</span>
+              <ThemeToggle />
+              <UserProfileMenu />
+            </div>
 
-          <div className="p-4 md:p-8">
-            <Breadcrumbs />
-            {children}
-          </div>
-        </main>
-      </div>
-    </MobileSidebarProvider>
+            <div className="p-4 md:p-8">
+              <Breadcrumbs />
+              {children}
+            </div>
+          </main>
+
+          {/* Command Palette — rendered here so it overlays everything */}
+          <CommandPalette />
+        </div>
+      </MobileSidebarProvider>
+    </ThemeProvider>
   );
 }

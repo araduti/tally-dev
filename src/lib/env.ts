@@ -42,6 +42,42 @@ const envSchema = z.object({
 
   // ── Optional ──
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+
+  // ── OAuth / SSO (optional — only needed if enabling social login) ──
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  MICROSOFT_CLIENT_ID: z.string().min(1).optional(),
+  MICROSOFT_CLIENT_SECRET: z.string().min(1).optional(),
+}).superRefine((data, ctx) => {
+  // Ensure that if one half of an OAuth provider is set, the other half is too.
+  if (data.GOOGLE_CLIENT_ID && !data.GOOGLE_CLIENT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GOOGLE_CLIENT_SECRET'],
+      message: 'GOOGLE_CLIENT_SECRET is required when GOOGLE_CLIENT_ID is set',
+    });
+  }
+  if (!data.GOOGLE_CLIENT_ID && data.GOOGLE_CLIENT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['GOOGLE_CLIENT_ID'],
+      message: 'GOOGLE_CLIENT_ID is required when GOOGLE_CLIENT_SECRET is set',
+    });
+  }
+  if (data.MICROSOFT_CLIENT_ID && !data.MICROSOFT_CLIENT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MICROSOFT_CLIENT_SECRET'],
+      message: 'MICROSOFT_CLIENT_SECRET is required when MICROSOFT_CLIENT_ID is set',
+    });
+  }
+  if (!data.MICROSOFT_CLIENT_ID && data.MICROSOFT_CLIENT_SECRET) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['MICROSOFT_CLIENT_ID'],
+      message: 'MICROSOFT_CLIENT_ID is required when MICROSOFT_CLIENT_SECRET is set',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
