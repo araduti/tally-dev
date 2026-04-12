@@ -12,14 +12,12 @@
  *  - sanitize() handles the newly added clientSecret / clientId keys
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { SENSITIVE_KEYS, sanitize } from '../sensitive-keys';
 
 describe('sensitive-keys', () => {
-  const originalEnv = process.env.NODE_ENV;
-
   afterEach(() => {
-    process.env.NODE_ENV = originalEnv;
+    vi.unstubAllEnvs();
   });
 
   describe('SENSITIVE_KEYS', () => {
@@ -99,7 +97,7 @@ describe('sensitive-keys', () => {
     });
 
     it('should extract Error properties in non-production', () => {
-      process.env.NODE_ENV = 'development';
+      vi.stubEnv('NODE_ENV', 'development');
       const error = new Error('something broke');
       error.name = 'CustomError';
 
@@ -112,7 +110,7 @@ describe('sensitive-keys', () => {
     });
 
     it('should omit Error stack in production', () => {
-      process.env.NODE_ENV = 'production';
+      vi.stubEnv('NODE_ENV', 'production');
       const error = new Error('something broke');
 
       const result = sanitize({ err: error });
