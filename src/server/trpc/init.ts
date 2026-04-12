@@ -6,6 +6,7 @@ import { createRLSProxy } from '@/lib/rls-proxy';
 import { redis, IDEMPOTENCY_TTL } from '@/lib/redis';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { noOrgContextError, insufficientRoleError, rateLimitExceededError } from '@/lib/errors';
+import { captureException } from '@/lib/sentry';
 import type { OrgRole, MspRole, PlatformRole } from '@prisma/client';
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -250,4 +251,37 @@ function parseCookie(cookieHeader: string, name: string): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * Shared onError handler for tRPC adapters (fetchRequestHandler, etc.).
+ *
+ * Only reports INTERNAL_SERVER_ERROR (500) to Sentry — business errors
+ * (4xx) are expected and should not create Sentry noise.
+ */
+export function handleTRPCError({
+  error,
+  path,
+  ctx,
+}: {
+  error: TRPCError;
+  path?: string;
+  ctx?: TRPCContext;
+}): void {
+  if (error.code !== 'INTERNAL_SERVER_ERROR') return;
+
+  captureException(error, {
+    organizationId: ctx?.organizationId ?? undefined,
+    userId: ctx?.userId ?? undefined,
+    traceId: ctx?.traceId,
+    tags: {
+      ...(path && { 'trpc.path': path }),
+      'trpc.code': error.code,
+    },
+    extra: {
+      ...(error.cause && typeof error.cause === 'object' && 'errorCode' in error.cause
+        ? { errorCode: (error.cause as Record<string, unknown>).errorCode }
+        : {}),
+    },
+  });
 }

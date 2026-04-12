@@ -43,6 +43,10 @@ const envSchema = z.object({
   // ── Optional ──
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
+  // ── Error Tracking (optional — Sentry) ──
+  SENTRY_DSN: z.string().url('SENTRY_DSN must be a valid URL').optional(),
+  SENTRY_ENVIRONMENT: z.string().min(1).optional(),
+
   // ── OAuth / SSO (optional — only needed if enabling social login) ──
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
   GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
