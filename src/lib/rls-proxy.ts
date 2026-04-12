@@ -10,9 +10,11 @@ import { prisma } from './db';
  * Verification, Account) pass through unmodified.
  */
 
-// Models that have organizationId as a direct field
+// Models that have organizationId as a direct field.
+// ⚠️  SECURITY: Every model in prisma/schema.prisma that carries an
+//    `organizationId` column MUST be listed here so the proxy auto-injects
+//    the tenant filter.  Missing an entry is an RLS bypass (CRITICAL).
 const DIRECT_ORG_MODELS = new Set([
-  'session',
   'member',
   'invitation',
   'dpaAcceptance',
@@ -21,6 +23,18 @@ const DIRECT_ORG_MODELS = new Set([
   'purchaseTransaction',
   'billingSnapshot',
   'auditLog',
+  'insightSnapshot',
+  'notification',
+]);
+
+// Raw-query methods that bypass model-level scoping and must NEVER be
+// called through the RLS proxy.  If code needs these, use the raw
+// `prisma` client with explicit organizationId filters.
+const BLOCKED_RAW_METHODS = new Set([
+  '$executeRaw',
+  '$executeRawUnsafe',
+  '$queryRaw',
+  '$queryRawUnsafe',
 ]);
 
 type RLSPrismaClient = PrismaClient;
@@ -28,6 +42,16 @@ type RLSPrismaClient = PrismaClient;
 export function createRLSProxy(organizationId: string): RLSPrismaClient {
   return new Proxy(prisma, {
     get(target, prop: string) {
+      // Block raw SQL methods — they bypass all model-level scoping.
+      if (BLOCKED_RAW_METHODS.has(prop)) {
+        return () => {
+          throw new Error(
+            `[RLS] ${prop}() is blocked on the org-scoped proxy. ` +
+            'Use the raw prisma client with explicit organizationId filters.',
+          );
+        };
+      }
+
       if (DIRECT_ORG_MODELS.has(prop)) {
         const model = target[prop as keyof typeof target] as any;
         return createModelProxy(model, organizationId);
@@ -94,17 +118,30 @@ function createOrgModelProxy(model: any, organizationId: string) {
       const original = target[prop];
       if (typeof original !== 'function') return original;
 
-      if (['findFirst', 'findUnique', 'update'].includes(prop)) {
+      // Read operations — scope to the org itself via `id`
+      if (['findFirst', 'findUnique', 'findMany', 'count', 'aggregate', 'groupBy'].includes(prop)) {
         return (args: any = {}) => {
           args.where = { ...args.where, id: organizationId };
           return original.call(target, args);
         };
       }
 
-      if (prop === 'findMany') {
+      // Mutation operations — scope to the org itself via `id`
+      if (['update', 'delete'].includes(prop)) {
         return (args: any = {}) => {
           args.where = { ...args.where, id: organizationId };
           return original.call(target, args);
+        };
+      }
+
+      // Bulk mutations are blocked — organizations should be mutated
+      // individually via the scoped `update` / `delete` above.
+      if (['updateMany', 'deleteMany'].includes(prop)) {
+        return () => {
+          throw new Error(
+            `[RLS] organization.${prop}() is blocked on the org-scoped proxy. ` +
+            'Use the raw prisma client with explicit id filters for bulk org operations.',
+          );
         };
       }
 
