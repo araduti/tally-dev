@@ -214,6 +214,7 @@ model Organization {
   auditLogs            AuditLog[]
   billingSnapshots     BillingSnapshot[]
   dpaAcceptances       DpaAcceptance[]
+  insightSnapshots     InsightSnapshot[]
 
   @@map("organization")
 }
@@ -536,7 +537,41 @@ model BillingSnapshot {
 }
 
 // =============================================================
-// 9. AUDIT LOG
+// 9. INSIGHT SNAPSHOTS
+// Persisted results from insight analysis runs (recommendations + waste alerts).
+// =============================================================
+
+model InsightSnapshot {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  type           String       // 'RECOMMENDATION' or 'WASTE_ALERT'
+  insightType    String       // e.g., 'RIGHT_SIZE', 'UNUSED_LICENSE'
+  title          String
+  description    String
+  severity       String       // 'LOW', 'MEDIUM', 'HIGH'
+  entityId       String
+  entityType     String       // 'LICENSE', 'SUBSCRIPTION'
+
+  potentialSavings Decimal?
+  estimatedWaste   Decimal?
+  suggestedAction  String?
+
+  metadata       Json         @default(dbgenerated("'{}'::jsonb"))
+
+  dismissedAt       DateTime?
+  dismissedByUserId String?
+
+  generatedAt    DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([organizationId, type])
+  @@map("insight_snapshots")
+}
+
+// =============================================================
+// 10. AUDIT LOG
 // Immutable append-only. Never update or delete rows from this table.
 // =============================================================
 
