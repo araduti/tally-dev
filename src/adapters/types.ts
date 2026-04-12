@@ -21,6 +21,11 @@ export interface VendorCatalogEntry {
   maxQuantity?: number;
 }
 
+export interface VendorMutationOptions {
+  /** Idempotency key to prevent duplicate operations at the vendor */
+  idempotencyKey?: string;
+}
+
 export interface VendorAdapter {
   readonly vendorType: VendorType;
 
@@ -32,6 +37,7 @@ export interface VendorAdapter {
     credentials: VendorCredentials,
     externalSubscriptionId: string,
     quantity: number,
+    options?: VendorMutationOptions,
   ): Promise<void>;
 
   /** Fetches the full product catalog from the vendor */
@@ -42,12 +48,14 @@ export interface VendorAdapter {
     credentials: VendorCredentials,
     externalSku: string,
     quantity: number,
+    options?: VendorMutationOptions,
   ): Promise<VendorSubscription>;
 
   /** Cancels a subscription on the vendor */
   cancelSubscription(
     credentials: VendorCredentials,
     externalSubscriptionId: string,
+    options?: VendorMutationOptions,
   ): Promise<void>;
 }
 

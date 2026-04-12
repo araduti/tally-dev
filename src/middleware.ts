@@ -42,7 +42,7 @@ function buildCsp(isDev: boolean): string {
     "default-src 'self'",
     `script-src 'self'${isDev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: https:",
+    "img-src 'self' data: blob:",
     "font-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",
@@ -64,11 +64,17 @@ function applySecurityHeaders(
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
+  headers.set(
+    'Permissions-Policy',
+    'camera=(), microphone=(), geolocation=(), usb=(), payment=(), autoplay=()',
+  );
+  headers.set('X-Permitted-Cross-Domain-Policies', 'none');
+
   // HSTS only in production — avoid poisoning the HSTS cache during local dev
   if (!isDev) {
     headers.set(
       'Strict-Transport-Security',
-      'max-age=31536000; includeSubDomains',
+      'max-age=63072000; includeSubDomains; preload',
     );
   }
 

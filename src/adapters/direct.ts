@@ -4,6 +4,7 @@ import type {
   VendorAdapter,
   VendorCatalogEntry,
   VendorCredentials,
+  VendorMutationOptions,
   VendorSubscription,
 } from './types';
 import { VendorError } from './types';
@@ -38,6 +39,7 @@ export const directAdapter: VendorAdapter = {
     _credentials: VendorCredentials,
     _externalSubscriptionId: string,
     quantity: number,
+    _options?: VendorMutationOptions,
   ): Promise<void> {
     if (quantity < 0) {
       throw new VendorError('DIRECT', null, 'Quantity must be non-negative');
@@ -60,6 +62,7 @@ export const directAdapter: VendorAdapter = {
     _credentials: VendorCredentials,
     externalSku: string,
     quantity: number,
+    _options?: VendorMutationOptions,
   ): Promise<VendorSubscription> {
     if (!externalSku) {
       throw new VendorError('DIRECT', null, 'externalSku is required to create a subscription');
@@ -82,6 +85,7 @@ export const directAdapter: VendorAdapter = {
   async cancelSubscription(
     _credentials: VendorCredentials,
     _externalSubscriptionId: string,
+    _options?: VendorMutationOptions,
   ): Promise<void> {
     // No-op: DIRECT vendor cancellations are tracked within Tally only.
   },

@@ -2,6 +2,7 @@ import type {
   VendorAdapter,
   VendorCatalogEntry,
   VendorCredentials,
+  VendorMutationOptions,
   VendorSubscription,
 } from './types';
 import { VendorError } from './types';
@@ -82,9 +83,10 @@ async function tdSynnexFetch<T>(
     method?: string;
     body?: unknown;
     params?: Record<string, string>;
+    idempotencyKey?: string;
   } = {},
 ): Promise<T> {
-  const { method = 'GET', body, params } = options;
+  const { method = 'GET', body, params, idempotencyKey } = options;
 
   let url = `${TDSYNNEX_API_BASE}${path}`;
   if (params) {
@@ -97,6 +99,10 @@ async function tdSynnexFetch<T>(
     'Content-Type': 'application/json',
     Accept: 'application/json',
   };
+
+  if (idempotencyKey) {
+    headers['Idempotency-Key'] = idempotencyKey;
+  }
 
   let response: Response;
   try {
@@ -243,12 +249,14 @@ export const tdSynnexAdapter: VendorAdapter = {
     credentials: VendorCredentials,
     externalSubscriptionId: string,
     quantity: number,
+    options?: VendorMutationOptions,
   ): Promise<void> {
     const token = await authenticate(credentials);
 
     await tdSynnexFetch<void>(token, `/subscriptions/${externalSubscriptionId}`, {
       method: 'PUT',
       body: { quantity },
+      idempotencyKey: options?.idempotencyKey,
     });
   },
 
@@ -293,6 +301,7 @@ export const tdSynnexAdapter: VendorAdapter = {
     credentials: VendorCredentials,
     externalSku: string,
     quantity: number,
+    options?: VendorMutationOptions,
   ): Promise<VendorSubscription> {
     const token = await authenticate(credentials);
     const { resellerId } = credentials;
@@ -310,6 +319,7 @@ export const tdSynnexAdapter: VendorAdapter = {
         // Use UTC date string to avoid timezone drift
         startDate: new Date().toISOString().slice(0, 10),
       },
+      idempotencyKey: options?.idempotencyKey,
     });
 
     return toVendorSubscription(created);
@@ -321,11 +331,13 @@ export const tdSynnexAdapter: VendorAdapter = {
   async cancelSubscription(
     credentials: VendorCredentials,
     externalSubscriptionId: string,
+    options?: VendorMutationOptions,
   ): Promise<void> {
     const token = await authenticate(credentials);
 
     await tdSynnexFetch<void>(token, `/subscriptions/${externalSubscriptionId}`, {
       method: 'DELETE',
+      idempotencyKey: options?.idempotencyKey,
     });
   },
 };
