@@ -208,7 +208,7 @@ export class Histogram implements MetricMeta {
     for (let i = 0; i < this.bucketBoundaries.length; i++) {
       if (value <= this.bucketBoundaries[i]) {
         entry.buckets[i] += 1;
-        break; // Store per-bucket counts; cumulative totals are computed during serialization
+        break; // Each observation lands in one bucket; cumulative totals are built during serialization
       }
     }
   }
