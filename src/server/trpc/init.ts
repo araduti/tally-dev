@@ -190,7 +190,7 @@ function requireRole(...allowedRoles: Array<PlatformRole | MspRole | OrgRole>) {
  * Middleware: Idempotency key enforcement for mutations.
  * The idempotency key is extracted from the parsed input.
  */
-const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
+const idempotencyGuard = t.middleware(async ({ ctx, next, input, path }) => {
   const parsedInput = input as Record<string, unknown> | undefined;
   const idempotencyKey = parsedInput?.idempotencyKey as string | undefined;
 
@@ -201,21 +201,43 @@ const idempotencyGuard = t.middleware(async ({ ctx, next, input }) => {
     });
   }
 
-  // Scope to organizationId to prevent cross-org cache collisions
+  // Scope to org + user + procedure path to prevent cross-org, cross-user,
+  // and cross-procedure cache collisions
   const orgId = (ctx as any).organizationId ?? 'global';
-  const cacheKey = `idempotency:${orgId}:${idempotencyKey}`;
-  const cached = await redis.get(cacheKey);
+  const userId = (ctx as any).userId ?? 'anonymous';
+  const cacheKey = `idempotency:${orgId}:${userId}:${path}:${idempotencyKey}`;
 
-  if (cached) {
-    // Return the cached response
-    return JSON.parse(cached);
+  // Atomic SET NX EX: claim the key with a processing sentinel to prevent
+  // TOCTOU races — only one request wins the lock
+  const acquired = await redis.set(
+    cacheKey,
+    '__processing__',
+    'EX',
+    IDEMPOTENCY_TTL,
+    'NX',
+  );
+
+  if (!acquired) {
+    // Key already exists — another request claimed it
+    const existing = await redis.get(cacheKey);
+
+    if (!existing || existing === '__processing__') {
+      // Mutation is still in-flight from a concurrent request
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: 'A request with this idempotency key is already being processed',
+      });
+    }
+
+    // Return the cached response from the previous successful execution
+    return JSON.parse(existing);
   }
 
   const result = await next();
 
-  // Cache the result for 24 hours (only for successful responses)
+  // Overwrite the processing sentinel with the actual result
   try {
-    await redis.setex(cacheKey, IDEMPOTENCY_TTL, JSON.stringify(result));
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', IDEMPOTENCY_TTL);
   } catch {
     // Non-critical: log but don't fail the request
   }
