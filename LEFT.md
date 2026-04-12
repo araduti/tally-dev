@@ -248,8 +248,10 @@
 - **Status:** IMPLEMENTED
 - Structured logger with JSON output (production) and human-readable format (development). Configurable log level via `LOG_LEVEL` env var. Automatic sensitive field redaction (password, credentials, token, etc.). Child logger support for request-scoped context (traceId, organizationId). Error serialization with stack traces in dev only.
 
-### 47. No Error Tracking (Sentry)
-- No `SENTRY_DSN` env var. No error-tracking integration. Errors visible only in server logs.
+### 47. ~~No Error Tracking (Sentry)~~ ✅ DONE
+- **File:** `src/lib/sentry.ts`, `src/lib/env.ts`, `src/server/trpc/init.ts`, `src/app/api/trpc/[trpc]/route.ts`
+- **Status:** IMPLEMENTED
+- Lightweight custom Sentry client using `fetch` (no @sentry/nextjs dependency). Parses `SENTRY_DSN` for envelope API. `captureException` / `captureMessage` with fire-and-forget delivery. Sensitive fields scrubbed. Wired into tRPC `onError` for 500-level errors only. Graceful no-op when DSN not configured.
 
 ### 48. No Payment Processing (Stripe)
 - README mentions "One-click Buy through Tally" but no Stripe integration, no checkout flow, no webhook handler.
