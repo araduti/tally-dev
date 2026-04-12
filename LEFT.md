@@ -253,11 +253,15 @@
 - **Status:** IMPLEMENTED
 - Lightweight custom Sentry client using `fetch` (no @sentry/nextjs dependency). Parses `SENTRY_DSN` for envelope API. `captureException` / `captureMessage` with fire-and-forget delivery. Sensitive fields scrubbed. Wired into tRPC `onError` for 500-level errors only. Graceful no-op when DSN not configured.
 
-### 48. No Payment Processing (Stripe)
-- README mentions "One-click Buy through Tally" but no Stripe integration, no checkout flow, no webhook handler.
+### 48. ~~No Payment Processing (Stripe)~~ ✅ DONE
+- **Files:** `src/lib/stripe.ts`, `src/server/routers/billing.ts`, `src/app/api/webhooks/stripe/route.ts`, `src/lib/env.ts`
+- **Status:** IMPLEMENTED
+- Stripe SDK client with lazy initialization (no-ops when `STRIPE_SECRET_KEY` is absent). `billing.createCheckoutSession` mutation creates Stripe Checkout Sessions with Tally metadata. `billing.getPaymentStatus` query exposes billing config. Webhook handler at `POST /api/webhooks/stripe` processes `checkout.session.completed`, `checkout.session.expired`, `invoice.payment_succeeded`, and `invoice.payment_failed` events. Env validation ensures all three Stripe vars are set together. Conditionally enabled via env vars — no impact when unconfigured.
 
-### 49. No OpenAPI / Swagger Documentation
-- tRPC procedures are documented in `docs/API-Reference.md` but no machine-readable OpenAPI spec exists for external consumers.
+### 49. ~~No OpenAPI / Swagger Documentation~~ ✅ DONE
+- **File:** `src/lib/openapi.ts`, `src/app/api/openapi/route.ts`, `src/app/api/docs/route.ts`
+- **Status:** IMPLEMENTED
+- OpenAPI 3.1.0 spec covers all 10 routers (~55 procedures). Served as JSON at `GET /api/openapi` and rendered via Swagger UI at `GET /api/docs`. No new npm dependencies — Swagger UI loads from CDN.
 
 ### 50. ~~Adapter Registry Not Type-Safe~~ ✅ DONE
 - **File:** `src/adapters/index.ts`
@@ -298,8 +302,10 @@
 - **Status:** IMPLEMENTED
 - Migration directory created with documentation. Rules: never `db push` in production, migration files committed to VCS, never edit applied migrations, destructive changes require two-step migration. Scripts already in package.json: `db:migrate`, `db:migrate:deploy`, `db:reset`.
 
-### 58. No Monitoring / APM
-- No Prometheus metrics, no OpenTelemetry traces, no Datadog/New Relic integration.
+### 58. ~~No Monitoring / APM~~ ✅ DONE
+- **Files:** `src/lib/metrics.ts`, `src/app/api/metrics/route.ts`
+- **Status:** IMPLEMENTED
+- Lightweight zero-dependency metrics library with Counter, Histogram, and Gauge types. Five pre-registered metrics: `tally_http_requests_total`, `tally_http_request_duration_seconds`, `tally_http_requests_in_flight`, `tally_vendor_api_calls_total`, `tally_vendor_api_duration_seconds`. Prometheus text exposition format served at `GET /api/metrics`. Labels support with deterministic key ordering and proper escaping. 39 unit tests.
 
 ---
 
@@ -310,16 +316,12 @@
 | **P0 — Critical** | 9 (9 done) | ~~Core logic~~, ~~deployment~~, ~~CI/CD~~, ~~E2E tests~~, ~~integration tests~~ |
 | **P1 — High** | 9 (9 done) | ~~Billing snapshots~~, ~~commitment workflows~~, ~~MSP constraints~~, ~~bulk import~~, ~~security middleware~~, ~~vendor adapter tests~~, ~~contract signing~~, ~~forgot password~~, ~~Inngest workflow tests~~ |
 | **P2 — Medium** | 16 (16 done) | ~~Audit log filtering~~, ~~DPA version compare~~, ~~homepage redirect~~, ~~org deletion cascade~~, ~~projected invoices~~, ~~create-license UI~~, ~~subscription detail~~, ~~insights actions~~, ~~vendor sync status~~, ~~onboarding persistence~~, ~~rate limit fallback~~, ~~credential erasure~~, ~~insights persistence~~, ~~OAuth/SSO~~, ~~email verification~~, ~~CSV template~~ |
-| **P3 — Low** | 24 (21 done) | ~~Health check~~, ~~next.config~~, ~~docker health~~, ~~type-safe adapters~~, ~~coverage config~~, ~~tsconfig strict~~, ~~scripts~~, ~~env validation~~, ~~breadcrumbs~~, ~~user profile menu~~, ~~invitation resend~~, ~~logging~~, ~~migration strategy~~, ~~command palette~~, ~~dark mode~~, ~~notifications~~, ~~table export~~, ~~keyboard shortcuts~~, ~~mobile experience~~, ~~team bulk ops~~ |
-| **Total** | **58 (55 done)** | |
+| **P3 — Low** | 24 (24 done) | ~~Health check~~, ~~next.config~~, ~~docker health~~, ~~type-safe adapters~~, ~~coverage config~~, ~~tsconfig strict~~, ~~scripts~~, ~~env validation~~, ~~breadcrumbs~~, ~~user profile menu~~, ~~invitation resend~~, ~~logging~~, ~~migration strategy~~, ~~command palette~~, ~~dark mode~~, ~~notifications~~, ~~table export~~, ~~keyboard shortcuts~~, ~~mobile experience~~, ~~team bulk ops~~, ~~error tracking~~, ~~payment processing~~, ~~OpenAPI docs~~, ~~monitoring/APM~~ |
+| **Total** | **58 (58 done)** | 🎉 **All items complete** |
 
-### Remaining Items (3)
+### Remaining Items (0)
 
-| # | Item | Priority | Notes |
-|---|------|----------|-------|
-| 47 | Error Tracking (Sentry) | P3 | Requires Sentry DSN and SDK integration |
-| 48 | Payment Processing (Stripe) | P3 | Large external integration requiring Stripe keys |
-| 58 | Monitoring / APM | P3 | Requires Prometheus/OpenTelemetry/Datadog setup |
+All 58 items have been implemented. ✅
 
 ### By Layer
 
@@ -327,6 +329,6 @@
 |-------|-------|--------|
 | **Backend / API** | 15 (15 done) | ✅ Complete |
 | **Frontend / UI** | 18 (18 done) | ✅ Complete |
-| **Infrastructure** | 14 (11 done) | 3 remaining: Sentry, Stripe, APM |
+| **Infrastructure** | 14 (14 done) | ✅ Complete |
 | **Testing** | 6 (6 done) | ✅ Complete |
 | **DevOps / Config** | 5 (5 done) | ✅ Complete |
