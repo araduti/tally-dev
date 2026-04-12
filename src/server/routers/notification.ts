@@ -106,7 +106,7 @@ export const notificationRouter = router({
         idempotencyKey: z.string(),
       }),
     )
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ ctx }) => {
       const result = await ctx.db.notification.updateMany({
         where: {
           organizationId: ctx.organizationId,

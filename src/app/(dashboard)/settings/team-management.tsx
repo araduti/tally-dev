@@ -91,15 +91,15 @@ export default function TeamManagement() {
   const utils = api.useUtils();
 
   // Data fetching — list members
-  const membersQuery = api.organization.listMembers.useQuery({});
+  const membersQuery = api.admin.listMembers.useQuery({});
   const members = (membersQuery.data?.items ?? []) as MemberRow[];
 
   // Mutations
-  const changeRoleMutation = api.organization.changeMemberRole.useMutation({
-    onSuccess: () => utils.organization.listMembers.invalidate(),
+  const changeRoleMutation = api.admin.updateRole.useMutation({
+    onSuccess: () => utils.admin.listMembers.invalidate(),
   });
-  const removeMemberMutation = api.organization.removeMember.useMutation({
-    onSuccess: () => utils.organization.listMembers.invalidate(),
+  const removeMemberMutation = api.admin.removeMember.useMutation({
+    onSuccess: () => utils.admin.listMembers.invalidate(),
   });
 
   // Selection state
@@ -138,8 +138,8 @@ export default function TeamManagement() {
       const promises = Array.from(selectedIds).map((memberId) =>
         changeRoleMutation.mutateAsync({
           memberId,
-          role: bulkRole,
-          idempotencyKey: `bulk-role-${memberId}-${bulkRole}-${Date.now()}`,
+          orgRole: bulkRole as 'ORG_OWNER' | 'ORG_ADMIN' | 'ORG_MEMBER',
+          idempotencyKey: crypto.randomUUID(),
         }),
       );
       await Promise.all(promises);
@@ -158,7 +158,7 @@ export default function TeamManagement() {
       const promises = Array.from(selectedIds).map((memberId) =>
         removeMemberMutation.mutateAsync({
           memberId,
-          idempotencyKey: `bulk-remove-${memberId}-${Date.now()}`,
+          idempotencyKey: crypto.randomUUID(),
         }),
       );
       await Promise.all(promises);
