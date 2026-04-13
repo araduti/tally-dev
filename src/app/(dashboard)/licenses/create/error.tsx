@@ -10,25 +10,30 @@ export default function CreateLicenseError({
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Create License</h1>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Create License</h1>
       </div>
 
-      <div className="bg-slate-800 rounded-xl border border-red-700/50 p-6 max-w-2xl">
-        <h2 className="text-lg font-semibold text-red-400 mb-2">Something went wrong</h2>
-        <p className="text-sm text-slate-400 mb-4">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-red-200 dark:border-red-500/20 p-8 max-w-2xl text-center shadow-sm">
+        <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-red-500/10 text-red-500 mb-4">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-7 w-7">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+          </svg>
+        </div>
+        <h2 className="text-lg font-semibold text-red-500 mb-2">Something went wrong</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
           {error.message || 'An unexpected error occurred while loading the form.'}
         </p>
-        <div className="flex gap-3">
+        <div className="flex justify-center gap-3">
           <button
             type="button"
             onClick={reset}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm font-medium transition"
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-white text-sm font-semibold transition-all duration-200 shadow-lg shadow-blue-500/20"
           >
             Try Again
           </button>
           <a
             href="/licenses"
-            className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white text-sm font-medium transition"
+            className="px-6 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 rounded-xl text-slate-900 dark:text-white text-sm font-semibold transition-all duration-200"
           >
             Back to Licenses
           </a>

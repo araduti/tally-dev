@@ -58,85 +58,132 @@ function ResetPasswordForm() {
 
   if (!token) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="w-full max-w-md bg-slate-800 rounded-xl p-8 border border-slate-700 text-center">
-          <h1 className="text-2xl font-bold text-white mb-4">Invalid Link</h1>
-          <p className="text-slate-400 mb-6 text-sm">
-            This password reset link is invalid or has expired.
-          </p>
-          <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300 text-sm">
-            Request a new reset link
-          </Link>
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 px-6 py-12">
+        <div className="fixed inset-0 -z-10" aria-hidden="true">
+          <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[100px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-violet-600/10 rounded-full blur-[100px]" />
+        </div>
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center">
+              <span className="text-sm font-bold text-white">T</span>
+            </div>
+            <span className="text-xl font-bold text-white">Tally</span>
+          </div>
+          <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-800 text-center">
+            <h1 className="text-2xl font-bold text-white mb-4">Invalid Link</h1>
+            <p className="text-slate-400 mb-6 text-sm">
+              This password reset link is invalid or has expired.
+            </p>
+            <Link href="/forgot-password" className="text-blue-400 hover:text-blue-300 text-sm font-medium transition-colors">
+              Request a new reset link
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (success) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 px-6 py-12">
+        <div className="fixed inset-0 -z-10" aria-hidden="true">
+          <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[100px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-violet-600/10 rounded-full blur-[100px]" />
+        </div>
+        <div className="w-full max-w-md animate-fade-in">
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center">
+              <span className="text-sm font-bold text-white">T</span>
+            </div>
+            <span className="text-xl font-bold text-white">Tally</span>
+          </div>
+          <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-800">
+            <h1 className="text-2xl font-bold text-white mb-6 text-center">Set New Password</h1>
+            <div className="mb-4 p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm" role="status">
+              Your password has been reset successfully.
+            </div>
+            <Link
+              href="/login"
+              className="block text-center w-full py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-white font-semibold transition-all duration-200 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30"
+            >
+              Sign In
+            </Link>
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-slate-900">
-      <div className="w-full max-w-md bg-slate-800 rounded-xl p-8 border border-slate-700">
-        <h1 className="text-2xl font-bold text-white mb-6 text-center">Set New Password</h1>
-
-        {success ? (
-          <div>
-            <div className="mb-4 p-3 bg-green-900/50 border border-green-700 rounded-lg text-green-300 text-sm" role="status">
-              Your password has been reset successfully.
-            </div>
-            <Link
-              href="/login"
-              className="block text-center w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white font-medium transition"
-            >
-              Sign In
-            </Link>
+    <main className="min-h-screen flex items-center justify-center bg-slate-950 px-6 py-12">
+      <div className="fixed inset-0 -z-10" aria-hidden="true">
+        <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-blue-600/15 rounded-full blur-[100px]" />
+        <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] bg-violet-600/10 rounded-full blur-[100px]" />
+      </div>
+      <div className="w-full max-w-md animate-fade-in">
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center">
+            <span className="text-sm font-bold text-white">T</span>
           </div>
-        ) : (
-          <>
-            {error && (
-              <div className="mb-4 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-300 text-sm" role="alert">
-                {error}
-              </div>
-            )}
+          <span className="text-xl font-bold text-white">Tally</span>
+        </div>
+        <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-800">
+          <h1 className="text-2xl font-bold text-white mb-6 text-center">Set New Password</h1>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1">
-                  New Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="At least 8 characters"
-                />
-              </div>
-              <div>
-                <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-1">
-                  Confirm Password
-                </label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Repeat your new password"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg text-white font-medium transition"
-              >
-                {loading ? 'Resetting...' : 'Reset Password'}
-              </button>
-            </form>
-          </>
-        )}
+          {error && (
+            <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm" role="alert">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-1.5">
+                New Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors duration-200"
+                placeholder="At least 8 characters"
+              />
+            </div>
+            <div>
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-slate-300 mb-1.5">
+                Confirm Password
+              </label>
+              <input
+                id="confirmPassword"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className="w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-colors duration-200"
+                placeholder="Repeat your new password"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-white font-semibold transition-all duration-200 shadow-lg shadow-blue-500/20 hover:shadow-blue-500/30 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Resetting...
+                </span>
+              ) : 'Reset Password'}
+            </button>
+          </form>
+        </div>
       </div>
     </main>
   );
@@ -145,8 +192,22 @@ function ResetPasswordForm() {
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
-      <main className="min-h-screen flex items-center justify-center bg-slate-900">
-        <div className="text-slate-400">Loading...</div>
+      <main className="min-h-screen flex items-center justify-center bg-slate-950 px-6 py-12">
+        <div className="animate-fade-in">
+          <div className="flex items-center justify-center gap-2 mb-8">
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-blue-500 to-violet-500 flex items-center justify-center">
+              <span className="text-sm font-bold text-white">T</span>
+            </div>
+            <span className="text-xl font-bold text-white">Tally</span>
+          </div>
+          <div className="bg-slate-900/80 backdrop-blur-sm rounded-2xl p-8 border border-slate-800 text-center">
+            <svg className="animate-spin h-8 w-8 text-blue-500 mx-auto mb-4" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <p className="text-slate-400 text-sm">Loading...</p>
+          </div>
+        </div>
       </main>
     }>
       <ResetPasswordForm />
