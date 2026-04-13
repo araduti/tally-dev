@@ -8,7 +8,7 @@ import { useMobileSidebar } from './mobile-sidebar-context';
 interface NavigationItem {
   name: string;
   href: string;
-  icon: string;
+  icon: React.ReactNode;
 }
 
 export function MobileSidebarToggle({

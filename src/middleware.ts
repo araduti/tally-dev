@@ -42,7 +42,7 @@ function buildCsp(isDev: boolean): string {
     "default-src 'self'",
     `script-src 'self'${isDev ? " 'unsafe-eval'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    "img-src 'self' data: blob: https://cdn.simpleicons.org",
     "font-src 'self' data:",
     "connect-src 'self'",
     "frame-ancestors 'none'",

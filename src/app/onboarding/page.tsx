@@ -4,16 +4,39 @@ import { useState } from 'react';
 import Link from 'next/link';
 
 const vendors = [
-  { id: 'microsoft', name: 'Microsoft 365', logo: '🟦' },
-  { id: 'google', name: 'Google Workspace', logo: '🟥' },
-  { id: 'adobe', name: 'Adobe Creative Cloud', logo: '🟩' },
-  { id: 'salesforce', name: 'Salesforce', logo: '☁️' },
-  { id: 'slack', name: 'Slack', logo: '💬' },
-  { id: 'zoom', name: 'Zoom', logo: '📹' },
-  { id: 'dropbox', name: 'Dropbox', logo: '📦' },
-  { id: 'atlassian', name: 'Atlassian', logo: '🔵' },
-  { id: 'aws', name: 'AWS', logo: '☁️' },
+  { id: 'microsoft', name: 'Microsoft 365', simpleIconSlug: 'microsoft' },
+  { id: 'google', name: 'Google Workspace', simpleIconSlug: 'google' },
+  { id: 'adobe', name: 'Adobe Creative Cloud', simpleIconSlug: 'adobe' },
+  { id: 'salesforce', name: 'Salesforce', simpleIconSlug: 'salesforce' },
+  { id: 'slack', name: 'Slack', simpleIconSlug: 'slack' },
+  { id: 'zoom', name: 'Zoom', simpleIconSlug: 'zoom' },
+  { id: 'dropbox', name: 'Dropbox', simpleIconSlug: 'dropbox' },
+  { id: 'atlassian', name: 'Atlassian', simpleIconSlug: 'atlassian' },
+  { id: 'aws', name: 'AWS', simpleIconSlug: 'amazonaws' },
 ];
+
+function VendorLogo({ slug, name }: { slug: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div className="h-8 w-8 mb-3 rounded-lg bg-slate-700 flex items-center justify-center text-sm font-bold text-slate-300" aria-hidden="true">
+        {name.charAt(0)}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={`https://cdn.simpleicons.org/${slug}`}
+      alt=""
+      width={32}
+      height={32}
+      className="h-8 w-8 mb-3"
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 type Intent = 'analyze' | 'buy' | null;
 
@@ -120,7 +143,7 @@ export default function OnboardingPage() {
                         </div>
                       </div>
                     )}
-                    <div className="text-3xl mb-3">{vendor.logo}</div>
+                    <VendorLogo slug={vendor.simpleIconSlug} name={vendor.name} />
                     <div className="text-sm font-semibold text-white">{vendor.name}</div>
                   </button>
                 );
