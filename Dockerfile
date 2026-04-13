@@ -50,6 +50,9 @@ ENV HOSTNAME=0.0.0.0
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
+# Copy entrypoint script (root-owned, world-executable — no write access for nextjs)
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
 # Copy standalone server
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 
@@ -63,4 +66,5 @@ USER nextjs
 
 EXPOSE 3000
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server.js"]
