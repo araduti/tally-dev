@@ -1,11 +1,11 @@
 import { z } from 'zod';
-import { router, orgMemberProcedure, orgAdminProcedure } from '../trpc/init';
+import { router, authenticatedProcedure, orgAdminProcedure } from '../trpc/init';
 import { offeringUnavailableError } from '@/lib/errors';
 import Decimal from 'decimal.js';
 import { VendorType } from '@prisma/client';
 
 export const catalogRouter = router({
-  listBundles: orgMemberProcedure
+  listBundles: authenticatedProcedure
     .input(z.object({
       cursor: z.string().cuid().optional(),
       limit: z.number().int().min(1).max(100).default(25),
@@ -48,7 +48,7 @@ export const catalogRouter = router({
       };
     }),
 
-  getBundle: orgMemberProcedure
+  getBundle: authenticatedProcedure
     .input(z.object({
       bundleId: z.string().cuid(),
     }))
@@ -69,7 +69,7 @@ export const catalogRouter = router({
       return bundle;
     }),
 
-  listProductOfferings: orgMemberProcedure
+  listProductOfferings: authenticatedProcedure
     .input(z.object({
       cursor: z.string().cuid().optional(),
       limit: z.number().int().min(1).max(100).default(25),
