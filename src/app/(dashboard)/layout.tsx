@@ -1,3 +1,5 @@
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import OrgSwitcher from './org-switcher';
 import UserProfileMenu from './user-profile-menu';
@@ -9,6 +11,7 @@ import { ThemeToggle } from './theme-toggle';
 import { CommandPalette, CommandPaletteButton } from './command-palette';
 import NotificationBell from './notification-bell';
 import { KeyboardShortcutProvider } from './keyboard-shortcuts';
+import { prisma } from '@/lib/db';
 
 const navigation = [
   {
@@ -109,11 +112,36 @@ function Sidebar({ className }: { className?: string }) {
   );
 }
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Check if the user has an active organization.
+  // Users without org membership must complete onboarding first.
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get('better-auth.session_token')?.value;
+
+  if (sessionToken) {
+    const session = await prisma.session.findUnique({
+      where: { token: sessionToken },
+      select: { activeOrganizationId: true, userId: true },
+    });
+
+    if (session && !session.activeOrganizationId) {
+      // Check if the user has ANY org membership they could switch to
+      const membership = await prisma.member.findFirst({
+        where: { userId: session.userId },
+        select: { organizationId: true },
+      });
+
+      if (!membership) {
+        // No org membership at all — redirect to onboarding
+        redirect('/onboarding');
+      }
+    }
+  }
+
   return (
     <ThemeProvider>
       <KeyboardShortcutProvider>

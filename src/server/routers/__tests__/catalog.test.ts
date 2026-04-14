@@ -2,9 +2,9 @@
  * Unit tests for the catalog router.
  *
  * The catalog router exposes four procedures:
- *   - listBundles       (authenticatedProcedure — any authenticated user)
- *   - getBundle         (authenticatedProcedure — any authenticated user)
- *   - listProductOfferings (authenticatedProcedure — any authenticated user)
+ *   - listBundles       (orgMemberProcedure — any org member)
+ *   - getBundle         (orgMemberProcedure — any org member)
+ *   - listProductOfferings (orgMemberProcedure — any org member)
  *   - comparePricing    (orgAdminProcedure  — ORG_ADMIN+ only)
  *
  * Bundles and ProductOfferings are global catalog data, so the router
