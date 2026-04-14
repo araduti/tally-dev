@@ -6,26 +6,26 @@ function SettingsLoadingSkeleton() {
   return (
     <>
       {/* Organization skeleton */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-        <div className="h-5 w-24 bg-slate-700 rounded animate-pulse mb-4" />
-        <div className="h-10 w-full max-w-md bg-slate-700/50 rounded-lg animate-pulse mb-4" />
-        <div className="h-9 w-20 bg-slate-700 rounded-lg animate-pulse" />
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 mb-6">
+        <div className="h-5 w-24 skeleton-shimmer rounded-lg mb-4" />
+        <div className="h-10 w-full max-w-md skeleton-shimmer rounded-lg mb-4" />
+        <div className="h-9 w-20 skeleton-shimmer rounded-lg" />
       </div>
       {/* Vendor Connections skeleton */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <div className="h-5 w-36 bg-slate-700 rounded animate-pulse" />
-          <div className="h-9 w-28 bg-slate-700 rounded-lg animate-pulse" />
+          <div className="h-5 w-36 skeleton-shimmer rounded-lg" />
+          <div className="h-9 w-28 skeleton-shimmer rounded-lg" />
         </div>
-        <div className="h-4 w-64 bg-slate-700/50 rounded animate-pulse" />
+        <div className="h-4 w-64 skeleton-shimmer rounded-lg" />
       </div>
       {/* Team Members skeleton */}
-      <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800">
         <div className="flex items-center justify-between mb-4">
-          <div className="h-5 w-28 bg-slate-700 rounded animate-pulse" />
-          <div className="h-9 w-28 bg-slate-700 rounded-lg animate-pulse" />
+          <div className="h-5 w-28 skeleton-shimmer rounded-lg" />
+          <div className="h-9 w-28 skeleton-shimmer rounded-lg" />
         </div>
-        <div className="h-4 w-48 bg-slate-700/50 rounded animate-pulse" />
+        <div className="h-4 w-48 skeleton-shimmer rounded-lg" />
       </div>
     </>
   );
@@ -49,6 +49,10 @@ async function SettingsContent() {
       slug: org.slug,
       logo: org.logo ?? null,
       organizationType: org.organizationType ?? null,
+      billingType: org.billingType ?? null,
+      provisioningEnabled: org.provisioningEnabled ?? false,
+      isContractSigned: org.isContractSigned ?? false,
+      parentOrganizationId: org.parentOrganizationId ?? null,
     };
   }
 
@@ -108,10 +112,10 @@ async function SettingsContent() {
 
 export default async function SettingsPage() {
   return (
-    <div>
+    <div className="animate-fade-in">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="mt-1 text-slate-400">Organization settings, vendor connections, and team management</p>
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
+        <p className="mt-1 text-slate-500 dark:text-slate-400">Organization settings, vendor connections, and team management</p>
       </div>
 
       <Suspense fallback={<SettingsLoadingSkeleton />}>
