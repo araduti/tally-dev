@@ -88,6 +88,10 @@ interface SerializedOrganization {
   slug: string;
   logo: string | null;
   organizationType: string | null;
+  billingType: string | null;
+  provisioningEnabled: boolean;
+  isContractSigned: boolean;
+  parentOrganizationId: string | null;
 }
 
 interface SerializedVendorConnection {
@@ -150,6 +154,19 @@ function ConnectionStatusBadge({ status }: { status: string }) {
   );
 }
 
+// ---------- Organization Type Badge ----------
+
+function orgTypeBadgeStyles(type: string | null): string {
+  switch (type) {
+    case 'MSP':
+      return 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/30';
+    case 'CLIENT':
+      return 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30';
+    default:
+      return 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30';
+  }
+}
+
 // ---------- Organization Section ----------
 
 function OrganizationSection({ initialOrganization }: { initialOrganization: SerializedOrganization | null }) {
@@ -185,11 +202,63 @@ function OrganizationSection({ initialOrganization }: { initialOrganization: Ser
   }, [initialOrganization]);
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-      <h2 className="text-lg font-semibold text-white mb-4">Organization</h2>
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-6">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Organization</h2>
       <div className="space-y-4">
-        <div>
-          <label htmlFor="org-name" className="block text-sm font-medium text-slate-300 mb-1">
+        {/* Read-only org details */}
+        <div className="grid sm:grid-cols-2 gap-4 mb-4">
+          <div>
+            <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Slug</span>
+            <span className="text-sm text-slate-700 dark:text-slate-300 font-mono">{initialOrganization?.slug ?? '—'}</span>
+          </div>
+          <div>
+            <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Type</span>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${orgTypeBadgeStyles(initialOrganization?.organizationType ?? null)}`}>
+              {initialOrganization?.organizationType ?? 'DIRECT'}
+            </span>
+          </div>
+          <div>
+            <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Billing Type</span>
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              {initialOrganization?.billingType === 'DIRECT_STRIPE' ? 'Direct (Stripe)' : initialOrganization?.billingType === 'MANUAL_INVOICE' ? 'Manual Invoice' : '—'}
+            </span>
+          </div>
+          <div>
+            <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Contract Status</span>
+            <span className={`inline-flex items-center gap-1.5 text-sm ${
+              initialOrganization?.isContractSigned
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-amber-600 dark:text-amber-400'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                initialOrganization?.isContractSigned ? 'bg-emerald-500' : 'bg-amber-500'
+              }`} />
+              {initialOrganization?.isContractSigned ? 'Signed' : 'Not Signed'}
+            </span>
+          </div>
+          <div>
+            <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Provisioning</span>
+            <span className={`inline-flex items-center gap-1.5 text-sm ${
+              initialOrganization?.provisioningEnabled
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-slate-500 dark:text-slate-400'
+            }`}>
+              <span className={`w-2 h-2 rounded-full ${
+                initialOrganization?.provisioningEnabled ? 'bg-emerald-500' : 'bg-slate-400'
+              }`} />
+              {initialOrganization?.provisioningEnabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+          {initialOrganization?.parentOrganizationId && (
+            <div>
+              <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Managed By</span>
+              <span className="text-sm text-slate-700 dark:text-slate-300">Parent MSP</span>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+          <label htmlFor="org-name" className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
             Organization Name
           </label>
           <input
@@ -198,19 +267,19 @@ function OrganizationSection({ initialOrganization }: { initialOrganization: Ser
             value={orgName}
             onChange={(e) => setOrgName(e.target.value)}
             disabled={!isEditing}
-            className="w-full max-w-md px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
+            className="w-full max-w-md px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
             placeholder="Your Organization"
           />
         </div>
 
         {updateOrg.isError && (
-          <div className="p-3 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm" role="alert">
+          <div className="p-3 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-700 dark:text-red-300 text-sm" role="alert">
             {updateOrg.error.message}
           </div>
         )}
 
         {successMsg && (
-          <div className="p-3 rounded-lg bg-green-900/30 border border-green-700 text-green-300 text-sm" role="status">
+          <div className="p-3 rounded-lg bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 text-green-700 dark:text-green-300 text-sm" role="status">
             {successMsg}
           </div>
         )}
@@ -238,7 +307,7 @@ function OrganizationSection({ initialOrganization }: { initialOrganization: Ser
                 type="button"
                 onClick={handleCancel}
                 disabled={updateOrg.isPending}
-                className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white transition disabled:opacity-50"
+                className="px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -570,9 +639,9 @@ function VendorConnectionsSection({ initialConnections }: { initialConnections: 
   }, [connections, disconnectMutation]);
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Vendor Connections</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Vendor Connections</h2>
         {!showAddForm && (
           <button
             type="button"
@@ -746,9 +815,9 @@ function TeamMembersSection({ initialMembers }: { initialMembers: SerializedMemb
   }, [inviteIdempotencyKey, inviteEmail, inviteRole, inviteRoleValue, inviteMutation]);
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">Team Members</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Team Members</h2>
         {!showInviteForm && (
           <button
             type="button"
@@ -1026,8 +1095,8 @@ function InvitationsSection({ initialInvitations }: { initialInvitations: Serial
   };
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
-      <h2 className="text-lg font-semibold text-white mb-4">Invitations</h2>
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-6">
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-white mb-4">Invitations</h2>
 
       {revokeMutation.isError && (
         <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-700 text-red-300 text-sm" role="alert">
@@ -1113,9 +1182,9 @@ function MspClientSection() {
   });
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-slate-700 mb-6">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold text-white">MSP Client Organizations</h2>
+        <h2 className="text-lg font-semibold text-slate-900 dark:text-white">MSP Client Organizations</h2>
         {!showForm && (
           <button
             type="button"
@@ -1222,9 +1291,9 @@ function DangerZoneSection() {
   });
 
   return (
-    <div className="bg-slate-800 rounded-xl p-6 border border-red-700/50">
-      <h2 className="text-lg font-semibold text-red-400 mb-4">Danger Zone</h2>
-      <p className="text-sm text-slate-400 mb-4">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-red-200 dark:border-red-700/50 shadow-sm">
+      <h2 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-4">Danger Zone</h2>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
         Deactivating your organization will soft-delete it and prevent all members from accessing it.
         This action can only be reversed by a platform administrator.
       </p>
