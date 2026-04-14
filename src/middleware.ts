@@ -40,7 +40,7 @@ function isAuthPath(pathname: string): boolean {
 function buildCsp(isDev: boolean): string {
   const directives: string[] = [
     "default-src 'self'",
-    `script-src 'self'${isDev ? " 'unsafe-eval'" : ''}`,
+    `script-src 'self'${isDev ? " 'unsafe-eval' 'unsafe-inline'" : ''}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob: https://cdn.simpleicons.org",
     "font-src 'self' data:",
