@@ -12,10 +12,10 @@ function MarketplaceLoadingSkeleton() {
         {[1, 2, 3].map((i) => (
           <div key={i} className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-sm">
             <div className="h-5 w-40 skeleton-shimmer rounded-lg mb-3" />
-            <div className="h-3 w-24 skeleton-shimmer rounded mb-3" />
+            <div className="h-3 w-24 skeleton-shimmer rounded-lg mb-3" />
             <div className="space-y-1.5 mb-3">
-              <div className="h-3 w-32 skeleton-shimmer rounded" />
-              <div className="h-3 w-28 skeleton-shimmer rounded" />
+              <div className="h-3 w-32 skeleton-shimmer rounded-lg" />
+              <div className="h-3 w-28 skeleton-shimmer rounded-lg" />
             </div>
             <div className="h-9 w-full skeleton-shimmer rounded-lg" />
           </div>
@@ -68,7 +68,7 @@ async function MarketplaceContent() {
 
 export default async function MarketplacePage() {
   return (
-    <div>
+    <div className="animate-fade-in">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Marketplace</h1>
         <p className="mt-1 text-slate-600 dark:text-slate-400">
