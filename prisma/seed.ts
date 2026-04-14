@@ -20,12 +20,18 @@ const CLIENT_USER_PASSWORD = "client123";
 
 /**
  * Encrypt vendor credentials for seed data.
- * Falls back to a placeholder if ENCRYPTION_KEY is not configured.
+ * Falls back to a placeholder if ENCRYPTION_KEY is not configured,
+ * logging a clear warning so developers know to set it.
  */
 function encryptCredentials(json: object): string {
   try {
     return encrypt(JSON.stringify(json));
-  } catch {
+  } catch (err) {
+    console.warn(
+      "   ⚠ ENCRYPTION_KEY not configured — storing placeholder credentials.",
+      "Set ENCRYPTION_KEY in .env to enable real encryption.",
+      String(err),
+    );
     return "seed-demo-credentials-placeholder";
   }
 }
@@ -519,7 +525,7 @@ async function main() {
   console.log("🌱 Seeding subscriptions…");
 
   const now = new Date();
-  const commitmentEnd = new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000); // 1 year
+  const commitmentEnd = new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()); // 1 year from now
 
   const subscription1 = await prisma.subscription.upsert({
     where: { externalId: "DEMO-SUB-PAX8-E3-001" },

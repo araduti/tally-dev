@@ -154,6 +154,19 @@ function ConnectionStatusBadge({ status }: { status: string }) {
   );
 }
 
+// ---------- Organization Type Badge ----------
+
+function orgTypeBadgeStyles(type: string | null): string {
+  switch (type) {
+    case 'MSP':
+      return 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/30';
+    case 'CLIENT':
+      return 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30';
+    default:
+      return 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30';
+  }
+}
+
 // ---------- Organization Section ----------
 
 function OrganizationSection({ initialOrganization }: { initialOrganization: SerializedOrganization | null }) {
@@ -200,13 +213,7 @@ function OrganizationSection({ initialOrganization }: { initialOrganization: Ser
           </div>
           <div>
             <span className="block text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Type</span>
-            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-              initialOrganization?.organizationType === 'MSP'
-                ? 'bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/30'
-                : initialOrganization?.organizationType === 'CLIENT'
-                  ? 'bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
-                  : 'bg-slate-100 dark:bg-slate-500/20 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-500/30'
-            }`}>
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${orgTypeBadgeStyles(initialOrganization?.organizationType ?? null)}`}>
               {initialOrganization?.organizationType ?? 'DIRECT'}
             </span>
           </div>
